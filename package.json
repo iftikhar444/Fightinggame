@@ -1,0 +1,15 @@
+{
+  "name": "riftbound-clash-protocol",
+  "version": "1.0.0",
+  "private": true,
+  "description": "RIFTBOUND: CLASH PROTOCOL - original 3D fighting game MVP, single-file offline build",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node test/sim.test.mjs",
+    "test:browser": "node test/browser.test.mjs",
+    "serve": "python -m http.server 8080"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.49.1"
+  }
+}

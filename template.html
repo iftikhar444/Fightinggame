@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RIFTBOUND: CLASH PROTOCOL</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>/*__STYLES__*/</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="flash"></div>
+<div id="grain"></div>
+<div id="pops"></div>
+<div id="announce"></div>
+
+<!-- ============================== HUD ============================== -->
+<div id="hud" class="screen">
+  <div class="hud-top">
+    <div class="side left">
+      <div class="row"><span class="nm" id="nameA">KAIA VENN</span><span class="arch" id="archA">ALL-ROUNDER</span></div>
+      <div class="bar health"><i class="ghost" id="ghostA"></i><i class="fill" id="hpA"></i><b class="ticks"></b></div>
+      <div class="bar guard"><i id="gdA"></i></div>
+      <div class="meters">
+        <div class="seg" id="meterA"><u></u><u></u><u></u></div>
+        <div class="fury" id="furyA"><i></i><span>FURY</span></div>
+      </div>
+      <div class="pips" id="pipsA"><u></u><u></u></div>
+    </div>
+
+    <div class="timer-wrap">
+      <div class="timer" id="timer">60</div>
+      <div class="roundtag" id="roundtag">ROUND 1</div>
+    </div>
+
+    <div class="side right">
+      <div class="row"><span class="arch" id="archB">GRAPPLER</span><span class="nm" id="nameB">ROOK CALDER</span></div>
+      <div class="bar health"><i class="ghost" id="ghostB"></i><i class="fill" id="hpB"></i><b class="ticks"></b></div>
+      <div class="bar guard"><i id="gdB"></i></div>
+      <div class="meters">
+        <div class="seg right" id="meterB"><u></u><u></u><u></u></div>
+        <div class="fury right" id="furyB"><i></i><span>FURY</span></div>
+      </div>
+      <div class="pips right" id="pipsB"><u></u><u></u></div>
+    </div>
+  </div>
+
+  <div class="combo left" id="comboA"><b>0</b><span>HITS</span><em></em></div>
+  <div class="combo right" id="comboB"><b>0</b><span>HITS</span><em></em></div>
+
+  <div class="tagbars">
+    <div class="tagbar left" id="tagA"><span>PARTNER</span><i></i></div>
+    <div class="tagbar right" id="tagB"><span>PARTNER</span><i></i></div>
+  </div>
+
+  <div class="debug" id="debug"></div>
+  <div class="hintbar" id="hintbar">ESC pause · F1 debug · M mute</div>
+</div>
+
+<!-- ============================= TITLE ============================= -->
+<div id="title" class="screen on">
+  <div class="title-inner">
+    <div class="kicker">ORIGINAL 3D FIGHTING PROTOTYPE · LOCAL MVP</div>
+    <h1>RIFT<span>BOUND</span></h1>
+    <div class="subtitle">CLASH PROTOCOL</div>
+    <div class="menu">
+      <button class="btn" data-mode="cpu"><b>VERSUS CPU</b><small>Local 1v1 against the AI</small></button>
+      <button class="btn" data-mode="local"><b>LOCAL 1V1</b><small>Two players, one keyboard</small></button>
+      <button class="btn" data-mode="tag"><b>TAG DUO</b><small>Two fighters per side, tag &amp; assist</small></button>
+      <button class="btn" data-mode="practice"><b>PRACTICE</b><small>No timer, hitbox overlay, reset</small></button>
+    </div>
+    <div class="diffbar" id="diffbar">
+      <span>CPU LEVEL</span>
+      <button class="chip" data-diff="rookie">ROOKIE</button>
+      <button class="chip on" data-diff="normal">NORMAL</button>
+      <button class="chip" data-diff="veteran">VETERAN</button>
+      <button class="chip" data-diff="rift">RIFT</button>
+    </div>
+    <div class="title-foot">
+      <span>WASD / ARROWS move</span><span>J K L attacks</span><span>HOLD BACK to guard</span>
+      <span>F1 debug</span><span>M mute</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ SELECT ============================ -->
+<div id="select" class="screen">
+  <div class="sel-head">
+    <div class="sel-title">SELECT YOUR FIGHTER</div>
+    <div class="sel-mode" id="selMode">VERSUS CPU</div>
+  </div>
+
+  <div class="sel-body">
+    <div class="sel-col left">
+      <div class="tag-p" id="p1tag">PLAYER 1</div>
+      <div class="sel-name" id="p1name">KAIA VENN</div>
+      <div class="sel-arch" id="p1arch">ALL-ROUNDER</div>
+      <p class="sel-blurb" id="p1blurb"></p>
+      <dl class="stats" id="p1stats"></dl>
+    </div>
+
+    <div class="sel-grid" id="grid"></div>
+
+    <div class="sel-col right">
+      <div class="tag-p p2" id="p2tag">CPU</div>
+      <div class="sel-name" id="p2name">ROOK CALDER</div>
+      <div class="sel-arch" id="p2arch">GRAPPLER</div>
+      <p class="sel-blurb" id="p2blurb"></p>
+      <dl class="stats" id="p2stats"></dl>
+    </div>
+  </div>
+
+  <div class="sel-stages">
+    <span class="lbl">STAGE</span>
+    <div class="stage-list" id="stageList"></div>
+  </div>
+
+  <div class="sel-foot">
+    <span>A / D or ← / → move · ENTER confirm</span>
+    <span id="selHint">P1: J to lock in</span>
+  </div>
+</div>
+
+<!-- ============================ PAUSE ============================ -->
+<div id="pause" class="screen">
+  <div class="panel">
+    <h2>PAUSED</h2>
+    <div class="pause-grid">
+      <div class="pause-btns">
+        <button class="btn sm" id="btnResume">RESUME</button>
+        <button class="btn sm" id="btnRestart">RESTART ROUND</button>
+        <button class="btn sm" id="btnSelect">CHARACTER SELECT</button>
+        <button class="btn sm" id="btnQuit">QUIT TO TITLE</button>
+      </div>
+      <div class="controls">
+        <h3>PLAYER 1</h3>
+        <table>
+          <tr><td>Move / Guard</td><td>A D (hold back to guard)</td></tr>
+          <tr><td>Jump / Crouch</td><td>W / S</td></tr>
+          <tr><td>Light / Heavy / Kick</td><td>J / K / L</td></tr>
+          <tr><td>Launcher</td><td>U</td></tr>
+          <tr><td>Special</td><td>I (Sable: S+I for trap)</td></tr>
+          <tr><td>Super</td><td>O</td></tr>
+          <tr><td>Fury Burst / Art</td><td>H / G</td></tr>
+          <tr><td>Throw / Tag</td><td>Y / T</td></tr>
+        </table>
+        <h3>PLAYER 2</h3>
+        <table>
+          <tr><td>Move / Guard</td><td>← → (hold back to guard)</td></tr>
+          <tr><td>Jump / Crouch</td><td>↑ / ↓</td></tr>
+          <tr><td>Light / Heavy / Kick</td><td>1 / 2 / 3</td></tr>
+          <tr><td>Launcher / Special</td><td>4 / 5</td></tr>
+          <tr><td>Super / Burst / Art</td><td>6 / 7 / 8</td></tr>
+          <tr><td>Tag / Throw</td><td>9 / 0</td></tr>
+        </table>
+        <p class="tiny">Numpad works too. Debug: F1 overlay · F2 reset positions · F3 meter · M mute</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ RESULT ============================ -->
+<div id="result" class="screen">
+  <div class="res-inner">
+    <div class="res-kicker">MATCH COMPLETE</div>
+    <h2 id="resWinner">KAIA VENN WINS</h2>
+    <div class="res-sub" id="resSub">2 — 1</div>
+    <div class="res-stats" id="resStats"></div>
+    <div class="res-btns">
+      <button class="btn" id="btnRematch">REMATCH</button>
+      <button class="btn" id="btnResSelect">CHARACTER SELECT</button>
+      <button class="btn" id="btnResTitle">TITLE</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>/*__THREE__*/</script>
+<script>/*__GAME__*/</script>
+</body>
+</html>
