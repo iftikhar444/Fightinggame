@@ -2,3 +2,6 @@ node_modules/
 *.log
 .DS_Store
 Thumbs.db
+
+# browser.test.mjs rewrites these numbered captures on every run
+screenshots/[0-9][0-9]_*.png

@@ -13,9 +13,6 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   font-family:var(--body);user-select:none;cursor:default}
 canvas#cv{position:fixed;inset:0;width:100%;height:100%;display:block}
 #flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:40;mix-blend-mode:screen}
-#grain{position:fixed;inset:0;pointer-events:none;z-index:5;opacity:.16;
-  background-image:radial-gradient(rgba(255,255,255,.5) .5px,transparent .6px);
-  background-size:3px 3px;mix-blend-mode:overlay}
 #pops{position:fixed;inset:0;pointer-events:none;z-index:30;overflow:hidden}
 #toast{position:fixed;left:50%;bottom:56px;transform:translateX(-50%);z-index:45;
   background:rgba(8,13,21,.92);border:1px solid var(--line);border-left:3px solid var(--gold);
@@ -28,14 +25,24 @@ canvas#cv{position:fixed;inset:0;width:100%;height:100%;display:block}
 
 /* ------------------------------------------------------------------- HUD */
 #hud{pointer-events:none}
-.hud-top{position:absolute;top:0;left:0;right:0;display:flex;align-items:flex-start;
+/* Top scrim: keeps every HUD label legible over a bright sky as well as a dark
+   foundry, without dimming the whole frame. */
+.hud-top{position:relative;display:flex;align-items:flex-start;
   padding:16px 20px 0;gap:14px}
+.hud-top::before{content:'';position:absolute;left:-20px;right:-20px;top:-16px;bottom:-16px;
+  background:linear-gradient(180deg,rgba(0,0,0,.58),rgba(0,0,0,.24) 58%,transparent);
+  pointer-events:none;z-index:-1}
 .side{flex:1;min-width:0}
 .side .row{display:flex;align-items:baseline;gap:10px;margin-bottom:5px}
 .side.right .row{justify-content:flex-end}
+.portrait{align-self:center;width:46px;height:46px;flex:none;object-fit:cover;
+  border:2px solid rgba(255,255,255,.75);background:#0a1018;transform:skewX(-6deg);
+  box-shadow:0 3px 14px rgba(0,0,0,.7);margin-bottom:-4px}
+.side.right .portrait{transform:skewX(6deg)}
 .nm{font-family:var(--head);font-size:26px;letter-spacing:.06em;line-height:1;
   text-shadow:0 2px 0 #000,0 0 18px rgba(0,0,0,.8)}
-.arch{font-size:10px;letter-spacing:.22em;color:var(--dim);text-transform:uppercase}
+.arch{font-size:11.5px;letter-spacing:.18em;color:#c7d3df;text-transform:uppercase;
+  text-shadow:0 1px 2px #000,0 0 6px #000}
 .side.left .nm{color:#dff6ff}
 .side.right .nm{color:#ffe4e0}
 
@@ -82,7 +89,8 @@ canvas#cv{position:fixed;inset:0;width:100%;height:100%;display:block}
   border:2px solid rgba(255,255,255,.35);background:rgba(0,0,0,.45);
   transform:skewX(-8deg);padding:2px 0 4px}
 .timer.low{color:#ff5a5a;border-color:rgba(255,90,90,.6);animation:pulse .5s infinite alternate}
-.roundtag{font-size:10px;letter-spacing:.26em;color:var(--dim);margin-top:5px}
+.roundtag{font-size:12px;letter-spacing:.22em;color:#c7d3df;margin-top:5px;
+  text-shadow:0 1px 2px #000,0 0 6px #000}
 
 .combo{position:absolute;top:31%;opacity:0;transition:opacity .15s;transform:translateY(0)}
 .combo.left{left:5%}
@@ -90,6 +98,11 @@ canvas#cv{position:fixed;inset:0;width:100%;height:100%;display:block}
 .combo.on{opacity:1}
 .combo b{font-family:var(--head);font-size:64px;line-height:.9;color:var(--gold);
   text-shadow:0 0 26px rgba(255,210,74,.7),0 4px 0 #000;display:block}
+.combo.punch b{animation:comboPunch .3s cubic-bezier(.2,.9,.3,1)}
+@keyframes comboPunch{
+  0%{transform:scale(1.38);color:#fff}
+  100%{transform:scale(1);color:var(--gold)}
+}
 .combo span{font-size:11px;letter-spacing:.3em;color:#fff;opacity:.8}
 .combo em{display:block;font-style:normal;font-size:12px;letter-spacing:.16em;color:#ff8a5a;margin-top:2px}
 
@@ -105,7 +118,8 @@ canvas#cv{position:fixed;inset:0;width:100%;height:100%;display:block}
   color:#9dffc9;background:rgba(0,0,0,.55);padding:8px 10px;border-left:2px solid #2aff9a;
   white-space:pre;display:none;max-width:420px}
 .debug.on{display:block}
-.hintbar{position:absolute;right:20px;bottom:18px;font-size:10px;letter-spacing:.14em;color:rgba(255,255,255,.35)}
+.hintbar{position:absolute;right:20px;bottom:18px;font-size:11px;letter-spacing:.12em;
+  color:rgba(255,255,255,.62);text-shadow:0 1px 2px #000,0 0 6px #000}
 
 /* --------------------------------------------------------------- announce */
 #announce{position:fixed;left:0;right:0;top:34%;text-align:center;z-index:35;pointer-events:none;
@@ -124,7 +138,13 @@ canvas#cv{position:fixed;inset:0;width:100%;height:100%;display:block}
 .pop{position:absolute;font-family:var(--head);font-size:34px;color:#fff;
   text-shadow:0 2px 0 #000,0 0 18px currentColor;pointer-events:none;
   animation:pop .72s cubic-bezier(.2,.9,.3,1) forwards;white-space:nowrap}
-.pop small{font-family:var(--body);font-size:11px;letter-spacing:.18em;display:block;opacity:.85}
+/* COUNTER / PUNISH read as their own callout word, not a 11px sub-label. */
+.pop small{font-family:var(--head);font-size:19px;font-style:italic;letter-spacing:.06em;
+  display:block;margin-top:-4px;opacity:1;color:inherit;
+  -webkit-text-stroke:1.2px rgba(0,0,0,.9);paint-order:stroke fill;
+  animation:tagin .26s cubic-bezier(.2,.9,.3,1) both}
+@keyframes tagin{from{transform:translateX(-14px) skewX(-8deg);opacity:0}
+  to{transform:none;opacity:1}}
 .pop.tag{font-family:var(--body);font-size:12px;letter-spacing:.24em;font-weight:700}
 @keyframes pop{
   0%{opacity:0;transform:translate(-50%,0) scale(.6)}

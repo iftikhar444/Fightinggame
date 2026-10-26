@@ -33,11 +33,19 @@ python -m http.server 8080
 ```bash
 node test/sim.test.mjs        # 44 headless combat assertions, no browser needed
 node test/browser.test.mjs    # 23 end-to-end checks + screenshots (needs playwright-core)
+node test/shots.mjs <name>    # one framed comparison shot + numeric framing check
 ```
 
 `test/sim.test.mjs` loads the real simulation modules in a Node `vm` context, so it tests the exact
 code the game runs. `test/browser.test.mjs` drives the real UI in headless Chromium: title → select →
 match → KO → result → practice → tag, and fails on any console error.
+
+`test/shots.mjs` captures a single named state (`01_foundry_neutral`, `02_foundry_hit`,
+`03_foundry_jump`, `04_temple_neutral`, `05_temple_hit`, `06_temple_super`, `07_foundry_wide`,
+`08_temple_wide`) at `?hq=1` and prints the fighter's on-screen height, camera distance and whether
+both heads project inside the frame. It sets `RB.freeze` before capture so short effects such as hit
+sparks and the defender flash are still on screen — headless software rendering runs at a few frames
+per second and would otherwise miss them.
 
 ---
 
@@ -113,10 +121,16 @@ starter → link → launcher → extender → ender
   array, drifting clouds).
 - Procedural rig with a shared skeleton and four silhouettes (batons, gauntlets + coat, energy fins,
   mantle + bow), 30+ pose states, and pose blending that follows simulation state.
-- Pooled additive VFX for light/heavy/launcher/guard/counter/fury/super, screen flash, camera shake,
-  camera kick, damage popups.
+- Pooled VFX in two layers: a normal-blended comic starburst with a dark outline underneath, and
+  additive glow, rings and direction-aligned streaks on top. Heavy hits add gravity-driven debris,
+  and the defender flashes on impact.
+- Launchers get their own streak burst, supers run a speed-line emitter, and a KO drops into about
+  0.75 s of slow motion before the result screen.
 - Fully procedural WebAudio SFX and per-stage ambience — no external audio files.
-- Adaptive resolution: if the frame rate drops, pixel ratio and effect budget step down automatically.
+- Camera fits the pair: distance is derived from the separation needed to keep both fighters in
+  frame, so they sit at roughly 55-60% of screen height and a full jump never clips the head.
+- Adaptive resolution with hysteresis: quality drops only after ~2 s of slow frames and recovers
+  after ~5 s of fast ones. `?hq=1` in the URL (or **F5** in game) pins full quality.
 
 ---
 
@@ -149,6 +163,10 @@ src/
   09_ui.js      DOM screens, HUD, popups
   10_main.js    loop, input routing, match flow
 build.mjs       inlines vendor + css + modules -> dist/riftbound.html
+test/
+  sim.test.mjs      44 assertions, runs the sim in a Node vm
+  browser.test.mjs  23 end-to-end checks in headless Chromium
+  shots.mjs         framed comparison screenshots + numeric framing checks
 ```
 
 Rules the code actually follows:

@@ -148,6 +148,10 @@
     $('nameB').textContent = match.fighters[1].def.name;
     $('archA').textContent = match.fighters[0].def.arch;
     $('archB').textContent = match.fighters[1].def.arch;
+    /* Portraits are rendered from the rigs on first use, not shipped as assets. */
+    var pa = $('portA'), pb = $('portB');
+    if (pa && RB.View.portraitFor) pa.src = RB.View.portraitFor(match.fighters[0].charId);
+    if (pb && RB.View.portraitFor) pb.src = RB.View.portraitFor(match.fighters[1].charId);
     UI.ghost = [1, 1];
     UI.lastCombo = [0, 0];
     $('tagA').classList.toggle('hidden', match.mode !== 'tag');
@@ -185,7 +189,13 @@
 
       /* combo counter */
       var comboEl = $(ids[s][6]);
-      if (f.comboHits > UI.lastCombo[s]) UI.comboShow[s] = 1.35;
+      if (f.comboHits > UI.lastCombo[s]) {
+        UI.comboShow[s] = 1.35;
+        /* short scale punch each time the count actually increases */
+        comboEl.classList.remove('punch');
+        void comboEl.offsetWidth;
+        comboEl.classList.add('punch');
+      }
       UI.lastCombo[s] = f.comboHits;
       UI.comboShow[s] = Math.max(0, UI.comboShow[s] - dt);
       var on = f.comboHits >= 2 && UI.comboShow[s] > 0;
@@ -283,7 +293,7 @@
   };
 
   /* ----------------------------------------------------------------- debug */
-  UI.debugPanel = function (match, on, inputs) {
+  UI.debugPanel = function (match, on, inputs, extra) {
     var d = $('debug');
     d.classList.toggle('on', on);
     if (!on || !match) return;
@@ -304,6 +314,7 @@
     if (inputs) {
       lines.push('IN  P1:' + bitNames(inputs[0]) + '  P2:' + bitNames(inputs[1]));
     }
+    if (extra) lines.push(extra);
     d.textContent = lines.join('\n');
   };
 

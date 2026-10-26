@@ -25,7 +25,8 @@
     last: 0,
     ended: 0,
     resultShown: false,
-    inputs: [0, 0]
+    inputs: [0, 0],
+    lowSpec: false, forceHQ: false, slowT: 0, fastT: 0, fps: 60
   };
 
   /* -------------------------------------------------------------- keymaps */
@@ -229,7 +230,7 @@
     }
     RB.Audio.unlock();
     Game.keys[c] = true;
-    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'Tab'].indexOf(c) >= 0) e.preventDefault();
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'Tab', 'F5'].indexOf(c) >= 0) e.preventDefault();
 
     var screen = RB.UI.screen;
 
@@ -246,6 +247,16 @@
     if (c === 'F2') { Game.resetPositions(); return; }
     if (c === 'F3') { Game.fillMeters(); return; }
     if (c === 'F4') { Game.speed = Game.speed === 1 ? 0.35 : 1; RB.UI.toast('SPEED ' + Game.speed + 'x'); return; }
+    if (c === 'F5') {
+      Game.forceHQ = !Game.forceHQ;
+      if (Game.forceHQ) {
+        Game.lowSpec = false;
+        RB.View.setQuality(1);
+        RB.VFX.setQuality(1);
+      }
+      RB.UI.toast('QUALITY ' + (Game.forceHQ ? 'FORCED FULL' : 'AUTO'));
+      return;
+    }
 
     if (screen === 'title') {
       if (c === 'Digit1') Game.startMode('cpu');
@@ -351,19 +362,35 @@
     var dt = Math.min(0.1, (now - Game.last) / 1000 || 0);
     Game.last = now;
 
-    /* Adaptive resolution: keep the frame rate playable on weak GPUs. */
+    /* Adaptive resolution with hysteresis. The old version flipped to low spec
+       on a single slow frame and never came back, so a screenshot taken while
+       the tab was still loading would be permanently soft. Now it needs two
+       seconds of sustained slowness to drop, and five seconds above 55 fps to
+       recover. ?hq=1 (or F5) pins full quality. */
     Game.fps = Game.fps ? Game.fps * 0.94 + (1 / Math.max(dt, 0.001)) * 0.06 : 60;
-    if (Game.fps < 34 && !Game.lowSpec) {
-      Game.lowSpec = true;
-      RB.View.setQuality(0.72);
-      RB.VFX.setQuality(0.55);
+    Game.slowT = Game.fps < 34 ? Game.slowT + dt : 0;
+    Game.fastT = Game.fps > 55 ? Game.fastT + dt : 0;
+    if (!Game.forceHQ) {
+      if (!Game.lowSpec && Game.slowT > 2) {
+        Game.lowSpec = true;
+        Game.slowT = 0;
+        RB.View.setQuality(0.72);
+        RB.VFX.setQuality(0.55);
+      } else if (Game.lowSpec && Game.fastT > 5) {
+        Game.lowSpec = false;
+        Game.fastT = 0;
+        RB.View.setQuality(1);
+        RB.VFX.setQuality(1);
+      }
     }
 
     var m = Game.match;
     var inFight = RB.UI.screen === 'fight' || RB.UI.screen === 'pause';
 
     if (m && !Game.paused && inFight && m.phase !== 'matchend') {
-      Game.acc += dt * Game.speed;
+      /* KO slow motion: the sim owns the timer, the view just spends it. */
+      var rate = m.slowmo > 0 ? 0.3 : 1;
+      Game.acc += dt * Game.speed * rate;
       var guard = 0;
       while (Game.acc >= RB.TICK && guard < 8) {
         stepSim();
@@ -384,8 +411,16 @@
     if (m) {
       RB.View.render(dt, m);
       if (inFight) RB.UI.updateHUD(m, dt);
-      RB.UI.debugPanel(m, Game.debug && inFight, Game.inputs);
+      RB.UI.debugPanel(m, Game.debug && inFight, Game.inputs, qualityLine());
     }
+  }
+
+  function qualityLine() {
+    var q = Game.forceHQ ? 'FORCED-HQ' : (Game.lowSpec ? 'LOW-SPEC' : 'FULL');
+    return 'QUALITY ' + q +
+      '  FPS ' + Math.round(Game.fps || 0) +
+      '  SCALE ' + (RB.View.pixelScale || 1).toFixed(2) +
+      '  VFX ' + Math.round((RB.VFX.quality || 1) * 100) + '%';
   }
 
   /* ----------------------------------------------------------------- boot */
@@ -393,6 +428,14 @@
     var canvas = document.getElementById('cv');
     RB.View.init(canvas);
     RB.UI.init(Game);
+    /* ?hq=1 pins full quality — used when capturing comparison screenshots so a
+       slow first second cannot permanently downgrade the render scale. */
+    if (/[?&]hq=1\b/.test(location.search)) {
+      Game.forceHQ = true;
+      Game.lowSpec = false;
+      RB.View.setQuality(1);
+      RB.VFX.setQuality(1);
+    }
     Game.bindDemo();
     Game.last = performance.now();
     requestAnimationFrame(frame);

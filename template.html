@@ -9,7 +9,6 @@
 <body>
 <canvas id="cv"></canvas>
 <div id="flash"></div>
-<div id="grain"></div>
 <div id="pops"></div>
 <div id="announce"></div>
 
@@ -17,7 +16,7 @@
 <div id="hud" class="screen">
   <div class="hud-top">
     <div class="side left">
-      <div class="row"><span class="nm" id="nameA">KAIA VENN</span><span class="arch" id="archA">ALL-ROUNDER</span></div>
+      <div class="row"><img class="portrait" id="portA" alt=""><span class="nm" id="nameA">KAIA VENN</span><span class="arch" id="archA">ALL-ROUNDER</span></div>
       <div class="bar health"><i class="ghost" id="ghostA"></i><i class="fill" id="hpA"></i><b class="ticks"></b></div>
       <div class="bar guard"><i id="gdA"></i></div>
       <div class="meters">
@@ -33,7 +32,7 @@
     </div>
 
     <div class="side right">
-      <div class="row"><span class="arch" id="archB">GRAPPLER</span><span class="nm" id="nameB">ROOK CALDER</span></div>
+      <div class="row"><span class="arch" id="archB">GRAPPLER</span><span class="nm" id="nameB">ROOK CALDER</span><img class="portrait" id="portB" alt=""></div>
       <div class="bar health"><i class="ghost" id="ghostB"></i><i class="fill" id="hpB"></i><b class="ticks"></b></div>
       <div class="bar guard"><i id="gdB"></i></div>
       <div class="meters">
@@ -53,7 +52,7 @@
   </div>
 
   <div class="debug" id="debug"></div>
-  <div class="hintbar" id="hintbar">ESC pause · F1 debug · M mute</div>
+  <div class="hintbar" id="hintbar">ESC pause · F1 debug · F5 quality · M mute</div>
 </div>
 
 <!-- ============================= TITLE ============================= -->

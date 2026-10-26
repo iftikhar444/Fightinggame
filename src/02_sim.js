@@ -153,7 +153,7 @@
     this.timer = Math.round(T.roundTime * 60);
     this.roundsToWin = opts.roundsToWin || T.roundsToWin;
     this.freeze = 0;                          // hitstop ticks
-    this.slowmo = 0;
+    this.slowmo = 0;                          // KO slow-motion ticks (view-side only)
     this.projectiles = [];
     this.traps = [];
     this.events = [];
@@ -187,6 +187,7 @@
     this.phaseT = 0;
     this.timer = Math.round(T.roundTime * 60);
     this.freeze = 0;
+    this.slowmo = 0;
     this.projectiles.length = 0;
     this.traps.length = 0;
     for (var s = 0; s < 2; s++) {
@@ -249,6 +250,10 @@
 
     var pa = this.bufferInput(fa, ia);
     var pb = this.bufferInput(fb, ib);
+
+    /* Counted every tick, including hitstop, so a KO reads as ~0.75 s of slow
+       motion no matter how many freeze frames are queued. */
+    if (this.slowmo > 0) this.slowmo--;
 
     if (this.freeze > 0) {
       this.freeze--;
@@ -785,6 +790,7 @@
     def.koT = 0;
     def.move = null;
     this.freeze = 14;
+    this.slowmo = 45;                         /* ~0.75 s of KO slow motion */
     this.emit({ type: 'ko', side: def.side, winner: att.side, x: def.x });
     if (this.phase === 'fight') { this.phase = 'ko'; this.phaseT = 0; }
     if (att) this.clearCombo(att, def);
