@@ -46,7 +46,23 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
 
 const advance = (n) => page.evaluate((k) => window.RIFTBOUND.Game.advance(k), n);
-const shot = async (name) => { await page.waitForTimeout(300); await page.screenshot({ path: path.join(shots, name) }); };
+/* Screenshots are a convenience, not an assertion. If the filesystem refuses
+   the write (read-only checkout, sandboxed runner) the suite must still finish
+   and report on the actual checks. */
+let shotWarned = false, shotDead = false;
+const shot = async (name) => {
+  if (shotDead) return;
+  await page.waitForTimeout(300);
+  try {
+    await page.screenshot({ path: path.join(shots, name) });
+  } catch (e) {
+    shotDead = true;
+    if (!shotWarned) {
+      shotWarned = true;
+      console.log('  note: screenshots could not be written (' + String(e.message || e).split('\n')[0] + ')');
+    }
+  }
+};
 
 console.log('\nRIFTBOUND browser smoke test\n' + '='.repeat(52));
 await page.goto(gameUrl, { waitUntil: 'load' });
@@ -55,6 +71,12 @@ await page.waitForTimeout(900);
 ok('page loads without runtime errors', errors.length === 0, errors[0]);
 ok('three.js is present', await page.evaluate(() => typeof window.THREE === 'object'));
 ok('game namespace is exposed', await page.evaluate(() => !!(window.RIFTBOUND && window.RIFTBOUND.Game)));
+/* Software rendering can take ~400 ms for the first frame, so wait for a draw
+   rather than assuming one happened inside a fixed sleep. */
+await page.waitForFunction(() => {
+  const v = window.RIFTBOUND && window.RIFTBOUND.RB && window.RIFTBOUND.RB.View;
+  return !!(v && v.renderer && v.renderer.info.render.calls > 5);
+}, null, { timeout: 15000 }).catch(() => { });
 ok('renderer produced draw calls', await page.evaluate(() => {
   const v = window.RIFTBOUND.RB.View;
   return v && v.renderer && v.renderer.info.render.calls > 5;
@@ -137,7 +159,12 @@ await page.waitForTimeout(250);
 await page.keyboard.press('Enter');
 await advance(105);
 await page.keyboard.press('F1');
-await page.waitForTimeout(200);
+/* The overlay class is applied by the render loop, and software rendering here
+   can take ~400 ms per frame — wait for the state rather than a fixed delay. */
+await page.waitForFunction(
+  () => document.getElementById('debug').classList.contains('on'),
+  null, { timeout: 5000 }
+).catch(() => { });
 ok('practice mode runs', await page.evaluate(() => window.RIFTBOUND.Game.mode === 'practice'));
 ok('debug overlay renders', await page.evaluate(() => document.getElementById('debug').classList.contains('on')));
 await shot('07_practice_debug.png');
@@ -198,6 +225,88 @@ await advance(20);
 ok('tag swap works in the live build', await page.evaluate(() =>
   window.RIFTBOUND.Game.match.sides[0].active === 1));
 await shot('10_tag_mode.png');
+
+/* ------------------------------------------- parry, overdrive, super cut-in */
+await page.evaluate(() => {
+  const G = window.RIFTBOUND.Game;
+  G.mode = 'local';
+  G.sel.lockedPick = [0, 1];
+  G.sel.stage = 0;
+  G.startMatch();
+  const m = G.match;
+  m.phase = 'fight'; m.phaseT = 0;
+  m.fighters[0].x = -0.9; m.fighters[0].face = 1;
+  m.fighters[1].x = 0.5; m.fighters[1].face = -1;
+  m.events.length = 0;
+});
+
+/* Guard raised late enough to be inside the 4-tick parry window. */
+const parried = await page.evaluate(() => {
+  const RB = window.RIFTBOUND.RB, G = window.RIFTBOUND.Game, m = G.match;
+  G.latch[0] = RB.IN.LIGHT;
+  G.advance(1);
+  for (let i = 0; i < 3; i++) G.advance(1);       // let the startup run
+  for (let i = 0; i < 10; i++) {                  // guard arrives just in time
+    G.latch[1] = RB.IN.RIGHT;
+    G.advance(1);
+  }
+  return m.events.some((e) => e.type === 'parry');
+});
+ok('parry fires in the live build', parried);
+await shot('11_parry.png');
+
+/* The HUD chip is written by the render loop, so let a frame land before
+   reading the class — the same trap as the debug overlay. */
+await page.evaluate(async () => {
+  const G = window.RIFTBOUND.Game, m = G.match;
+  m.fighters[0].hp = m.fighters[0].maxHp * 0.2;
+  G.advance(2);
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+});
+await page.waitForFunction(
+  () => document.getElementById('sideA').classList.contains('od'),
+  null, { timeout: 5000 }
+).catch(() => { });
+const odShown = await page.evaluate(() => {
+  const m = window.RIFTBOUND.Game.match;
+  const side = document.getElementById('sideA');
+  return { armed: m.fighters[0].overdrive === true, cls: side.classList.contains('od') };
+});
+ok('overdrive arms and shows on the HUD', odShown.armed && odShown.cls,
+  JSON.stringify(odShown));
+
+/* Super cut-in: assert the overlay actually becomes visible, not just that the
+   class was added — that is the failure mode a CSS-only implementation has. */
+await page.evaluate(() => {
+  const G = window.RIFTBOUND.Game;
+  G.debug = false;
+  window.RIFTBOUND.RB.View.debug = false;
+});
+const cutin = await page.evaluate(async () => {
+  const RB = window.RIFTBOUND.RB, G = window.RIFTBOUND.Game, m = G.match;
+  m.fighters[0].meter = 100;
+  m.fighters[0].x = -1.0; m.fighters[1].x = 1.0;
+  const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
+  for (let i = 0; i < 40; i++) {
+    G.latch[0] = i === 0 ? RB.IN.SUPER : 0;
+    G.advance(1);
+    if (m.fighters[0].state === 'super') break;
+  }
+  G.paused = true;
+  RB.freeze = true;
+  for (let i = 0; i < 8; i++) await raf();
+  const el = document.getElementById('cutin');
+  return {
+    on: el.classList.contains('on'),
+    opacity: parseFloat(getComputedStyle(el).opacity) || 0,
+    name: document.getElementById('ciName').textContent,
+    move: document.getElementById('ciMove').textContent
+  };
+});
+ok('super cut-in becomes visible', cutin.on && cutin.opacity > 0.5, JSON.stringify(cutin));
+ok('super cut-in names the fighter and the move',
+  cutin.name.length > 0 && cutin.move.length > 0);
+await shot('12_super_cutin.png');
 
 ok('no console errors during the whole run', errors.length === 0, errors.slice(0, 3).join(' | '));
 

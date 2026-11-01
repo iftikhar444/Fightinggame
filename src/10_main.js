@@ -413,6 +413,10 @@
       if (inFight) RB.UI.updateHUD(m, dt);
       RB.UI.debugPanel(m, Game.debug && inFight, Game.inputs, qualityLine());
     }
+    /* Cut-in and banner opacity are advanced here so they work even when the
+       page is throttled and CSS animations stall. */
+    RB.UI.tickCutin(dt);
+    RB.UI.tickAnnounce(dt);
   }
 
   function qualityLine() {

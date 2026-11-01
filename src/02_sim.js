@@ -73,7 +73,9 @@
     this.prevMask = 0;
     this.buf = [];
     this.blockHeld = false;
+    this.blockHeldT = 0;      // ticks the guard has been held — drives the parry window
     this.crouching = false;
+    this.overdrive = false;   // armed below T.overdriveAt health
     this.airT = 0;
     this.wallUsed = false;
     this.throwBreakT = 0;
@@ -117,6 +119,8 @@
     this.landLag = 0;
     this.guard = T.guardMax;
     this.blockHeld = false;
+    this.blockHeldT = 0;
+    this.overdrive = false;
     this.crouching = false;
   };
 
@@ -369,6 +373,13 @@
     var holdingDown = !!(mask & IN.DOWN);
     f.crouching = holdingDown && !f.isAirborne();
     f.blockHeld = holdingBack && !f.isAirborne();
+    /* Guard age drives the parry window; it resets the instant guard drops. */
+    f.blockHeldT = f.blockHeld ? Math.min(60, f.blockHeldT + 1) : 0;
+    /* Overdrive arms below the health threshold and stays armed. */
+    if (!f.overdrive && f.hp > 0 && f.hp <= f.maxHp * T.overdriveAt) {
+      f.overdrive = true;
+      this.emit({ type: 'overdrive', side: f.side, x: f.x });
+    }
 
     /* Global physics */
     this.physics(f);
@@ -673,6 +684,34 @@
     var counter = !blocked && def.state === ST.ATTACK && def.move && def.moveFrame < def.move.startup;
     var punish = !blocked && def.state === ST.ATTACK && def.move && def.moveFrame >= def.move.startup + def.move.active;
 
+    /* ---- Just Guard -------------------------------------------------------
+       The guard was raised inside the parry window, so this is a read rather
+       than a block. No chip, guard refunded, meter gained, and the attacker is
+       left standing there for long enough to be punished. Supers and throws
+       are excluded so the defensive option never invalidates a whole kit. */
+    var parry = blocked && !mv.superMove && !mv.throwMove &&
+      def.blockHeldT > 0 && def.blockHeldT <= T.parryWindow &&
+      def.state !== ST.BLOCKSTUN && def.state !== ST.GUARDCRUSH;
+    if (parry) {
+      def.guard = Math.min(T.guardMax, def.guard + T.parryGuardRefund);
+      def.meter = Math.min(T.superMax, def.meter + T.parryMeter);
+      def.fury = Math.min(T.furyMax, def.fury + 6);
+      def.state = ST.BLOCK;
+      def.stunT = 0;
+      att.state = ST.HIT;
+      att.stunT = T.parryStun;
+      att.vx = -att.face * 0.9;
+      att.move = null;
+      att.hitConfirmed = false;
+      att.cancelOpen = false;
+      this.freeze = 7;
+      this.emit({
+        type: 'parry', side: def.side, x: def.x, y: def.hurtCenter(),
+        element: def.def.element, color: def.def.elementColor
+      });
+      return;
+    }
+
     /* FreeStyle legality: repeat limit per combo. */
     if (!blocked) {
       var used = att.comboMoves[mv.id] || 0;
@@ -683,7 +722,11 @@
     var scale = blocked ? 1 : this.scaleFor(att.comboHits);
     var artMul = att.furyArtT > 0 ? 1.15 : 1;
     var counterMul = counter ? 1.25 : 1;
-    var dmg = mv.dmg * scale * artMul * counterMul;
+    var odMul = att.overdrive ? T.overdriveDmg : 1;
+    /* A counter or punish pops the attacker's element for a small extra chunk. */
+    var burst = !blocked && (counter || punish);
+    var burstMul = burst ? T.burstDamage : 1;
+    var dmg = mv.dmg * scale * artMul * counterMul * odMul * burstMul;
     var launch = mv.launch;
 
     if (blocked) {
@@ -714,7 +757,8 @@
     att.comboDamage += dmg;
     att.hitConfirmed = true;
     att.cancelOpen = true;
-    att.meter = Math.min(T.superMax, att.meter + mv.meterGain);
+    var meterMul = att.overdrive ? T.overdriveMeter : 1;
+    att.meter = Math.min(T.superMax, att.meter + mv.meterGain * meterMul + (burst ? T.burstMeter : 0));
     att.fury = Math.min(T.furyMax, att.fury + mv.furyGain);
     def.meter = Math.min(T.superMax, def.meter + mv.meterGain * 0.4);
     def.fury = Math.min(T.furyMax, def.fury + dmg * 0.7);
@@ -748,11 +792,13 @@
       this.emit({ type: 'wallSplat', x: def.x, side: def.side });
     }
 
-    this.freeze = Math.round(mv.hitstop * T.hitstopScale);
+    this.freeze = Math.round(mv.hitstop * T.hitstopScale) + (burst ? T.burstHitstop : 0);
     this.emit({
       type: 'hit', side: att.side, x: def.x, y: def.hurtCenter(), moveId: mv.id,
       dmg: dmg, counter: counter, punish: punish, blocked: false,
-      combo: att.comboHits, launch: launch > 0, art: att.furyArtT > 0
+      combo: att.comboHits, launch: launch > 0, art: att.furyArtT > 0,
+      burst: burst, overdrive: att.overdrive,
+      element: att.def.element, color: att.def.elementColor
     });
 
     if (def.hp <= 0) this.koDefender(def, att);
@@ -909,11 +955,13 @@
   };
 
   Match.prototype.tryFuryBurst = function (f) {
-    if (f.fury < T.furyBurstCost) { this.emit({ type: 'invalid', reason: 'fury', side: f.side }); return false; }
+    /* Overdrive makes the reversal cheaper — that is the comeback lever. */
+    var cost = f.overdrive ? T.overdriveBurstCost : T.furyBurstCost;
+    if (f.fury < cost) { this.emit({ type: 'invalid', reason: 'fury', side: f.side }); return false; }
     var ok = f.state === ST.HIT || f.state === ST.BLOCKSTUN || f.state === ST.GUARDCRUSH ||
       f.state === ST.IDLE || f.state === ST.BLOCK || f.state === ST.CROUCH || f.state === ST.WALK;
     if (!ok || f.isAirborne()) { this.emit({ type: 'invalid', reason: 'state', side: f.side }); return false; }
-    f.fury -= T.furyBurstCost;
+    f.fury -= cost;
     f.state = ST.FURYBURST;
     f.stateT = 0;
     f.move = null;

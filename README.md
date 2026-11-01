@@ -31,7 +31,7 @@ python -m http.server 8080
 ## Test it
 
 ```bash
-node test/sim.test.mjs        # 44 headless combat assertions, no browser needed
+node test/sim.test.mjs        # 56 headless combat assertions, no browser needed
 node test/browser.test.mjs    # 23 end-to-end checks + screenshots (needs playwright-core)
 node test/shots.mjs <name>    # one framed comparison shot + numeric framing check
 ```
@@ -96,6 +96,26 @@ starter → link → launcher → extender → ender
 - Damage scaling from 100% down to a 25% floor, juggle budget, hitstun decay.
 - Route drops are reported in the debug overlay with a reason (`repeatLimit`, etc.).
 
+### Defence: Just Guard (parry)
+- Hold guard **within 4 ticks** of the hit landing and it is a parry, not a block.
+- No chip, guard refunded, +16 meter, and the attacker is stunned for 22 ticks — fully punishable.
+- Guard held longer than the window is an ordinary block, so mashing does not parry.
+- Supers and throws are excluded, so one defensive option can't invalidate a whole kit.
+
+### Element Burst (counter / punish)
+- Every fighter carries an element: Kaia EMBER, Rook QUAKE, Mira VOLT, Sable VOID.
+- Landing a counter hit (during the opponent's startup) or a punish (during recovery) pops it:
+  ×1.25 counter damage, extra hitstop, bonus meter, and a full element-coloured ring burst.
+- The colour is the attacker's identity, not a generic spark — the impact tells you who hit you.
+
+### Overdrive (comeback)
+- Below 30% health a fighter arms Overdrive for the rest of the round: +12% damage, +25% meter
+  gain, and Fury Burst drops from 60 to 50.
+- It is a **damage** buff, not a defence buff — it rewards continuing to take risks instead of
+  turtling. Frail characters reach it sooner in absolute health, which partly offsets low HP.
+
+See **`GAMEPLAY.md`** for the full design rationale, the balance tables, and every tuning knob.
+
 ### Fury (separate from Super meter)
 - Builds from taking damage, blocking, and landing hits.
 - **Fury Burst** (60): defensive shock that pushes the opponent away. Usable *out of hitstun*, with
@@ -108,6 +128,10 @@ starter → link → launcher → extender → ender
 - Costs the full meter exactly once; validated range at activation, so it can genuinely whiff.
 - Multi-hit cinematic with a real opponent hit state, real damage, and a real knockdown at the end.
 - Camera pulls in during the cinematic; the opponent stays on screen.
+- **Full-screen cut-in** on activation: element tag, fighter name, super name, speed lines and an
+  element-coloured wash, with the rendered portrait as a medallion. Opacity is driven from the game
+  loop rather than a CSS keyframe, because keyframes stall under software rendering and a cut-in
+  that silently fails to appear is worse than none.
 
 ### Tag Duo
 - Two fighters per side, shared match, partner has their own health bar and tag cooldown.
@@ -131,19 +155,22 @@ starter → link → launcher → extender → ender
   frame, so they sit at roughly 55-60% of screen height and a full jump never clips the head.
 - Adaptive resolution with hysteresis: quality drops only after ~2 s of slow frames and recovers
   after ~5 s of fast ones. `?hq=1` in the URL (or **F5** in game) pins full quality.
+- Element-coloured impact rings, dash afterimages, an overdrive ground pulse, and a HUD chip so a
+  comeback state is legible from the other side of the screen.
 
 ---
 
 ## Roster
 
-| Fighter | Archetype | Identity | Special | Super |
-|---|---|---|---|---|
-| **Kaia Venn** | All-rounder | Clean conversions, honest buttons | Crosswind Arc (forward carry) | Horizon Split |
-| **Rook Calder** | Grappler | Command grab punishes guard, slow approach | Anchor Clinch (grab) | Ground Zero Driver |
-| **Mira Sol** | Rushdown | Fastest jab, real recovery, low health | Flashline (dash strike) | Sunbreak Relay |
-| **Sable Quill** | Zoner / trapper | Lane control, armed floor trap, frail up close | Prism Shot / Delayed Meridian | Constellation Fall |
+| Fighter | Element | Archetype | Identity | Special | Super |
+|---|---|---|---|---|---|
+| **Kaia Venn** | EMBER | All-rounder | Clean conversions, honest buttons | Crosswind Arc (forward carry) | Horizon Split |
+| **Rook Calder** | QUAKE | Grappler | Command grab punishes guard, slow approach | Anchor Clinch (grab) | Ground Zero Driver |
+| **Mira Sol** | VOLT | Rushdown | Fastest jab, real recovery, low health | Flashline (dash strike) | Sunbreak Relay |
+| **Sable Quill** | VOID | Zoner / trapper | Lane control, armed floor trap, frail up close | Prism Shot / Delayed Meridian | Constellation Fall |
 
 Each has distinct health, speed, weight, jump, dash, reach and frame data — not just a palette swap.
+Health runs 90-112, and each fighter's element is the colour of their counter burst.
 
 ---
 
@@ -164,7 +191,7 @@ src/
   10_main.js    loop, input routing, match flow
 build.mjs       inlines vendor + css + modules -> dist/riftbound.html
 test/
-  sim.test.mjs      44 assertions, runs the sim in a Node vm
+  sim.test.mjs      56 assertions, runs the sim in a Node vm
   browser.test.mjs  23 end-to-end checks in headless Chromium
   shots.mjs         framed comparison screenshots + numeric framing checks
 ```

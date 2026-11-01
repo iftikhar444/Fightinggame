@@ -172,6 +172,10 @@
       $(ids[s][1]).style.width = (UI.ghost[s] * 100).toFixed(2) + '%';
       var hpBar = $(ids[s][0]).parentElement;
       hpBar.classList.toggle('low', p < 0.25);
+      /* Overdrive is a state the opponent needs to see, so it gets a chip on
+         the HUD, not just an in-world aura. */
+      var sideEl = document.getElementById(s === 0 ? 'sideA' : 'sideB');
+      if (sideEl) sideEl.classList.toggle('od', !!f.overdrive);
       $(ids[s][2]).style.width = Math.max(0, f.guard / RB.TUNING.guardMax * 100).toFixed(1) + '%';
 
       var segs = $(ids[s][3]).querySelectorAll('u');
@@ -248,11 +252,11 @@
     setTimeout(function () { d.remove(); }, 760);
   };
 
-  UI.popText = function (x, y, text, color) {
+  UI.popText = function (x, y, text, color, kind) {
     var p = project(x, y);
     if (!p) return;
     var d = document.createElement('div');
-    d.className = 'pop tag';
+    d.className = 'pop tag' + (kind === 'big' ? ' big' : '');
     d.style.left = p.x + 'px';
     d.style.top = p.y + 'px';
     d.style.color = color || '#fff';
@@ -261,13 +265,80 @@
     setTimeout(function () { d.remove(); }, 760);
   };
 
+  /* Big centre-screen text: ROUND, FIGHT, K.O., PERFECT. Driven from the game
+     loop for the same reason as the cut-in — CSS keyframes stall under
+     headless/software rendering and the banner would silently never appear. */
+  UI.announceT = 0;
+  UI.announceMax = 1.5;
+
   UI.bigAnnounce = function (text, style) {
     var a = $('announce');
     a.textContent = text;
-    a.className = style === 'super' ? 'small' : '';
-    a.classList.remove('go');
-    void a.offsetWidth;
-    a.classList.add('go');
+    a.className = (style === 'super' ? 'small' : '') + ' go';
+    a.style.opacity = '0';
+    UI.announceT = UI.announceMax;
+  };
+
+  UI.tickAnnounce = function (dt) {
+    if (UI.announceT <= 0) return;
+    UI.announceT -= dt;
+    var a = $('announce');
+    if (!a) return;
+    var t = 1 - UI.announceT / UI.announceMax;
+    var o = t < 0.12 ? t / 0.12 : (t < 0.72 ? 1 : Math.max(0, 1 - (t - 0.72) / 0.28));
+    var s = t < 0.12 ? 1.5 - (t / 0.12) * 0.5 : (t < 0.72 ? 1 : 1 + (t - 0.72) * 0.35);
+    a.style.opacity = o.toFixed(3);
+    a.style.transform = 'scale(' + s.toFixed(3) + ') skewX(-8deg)';
+    if (UI.announceT <= 0) a.classList.remove('go');
+  };
+
+  /* Full-screen super cut-in. `def` is the fighter definition; the portrait is
+     rendered once by the view and cached, so this never blocks.
+     Visibility is driven by tickCutin() from the game loop — CSS keyframes do
+     not advance reliably under headless/software rendering. */
+  UI.cutinT = 0;
+  UI.cutinMax = 1.05;
+
+  UI.superCutin = function (def) {
+    var el = $('cutin');
+    if (!el || !def) return;
+    var img = $('ciImg');
+    if (img && RB.View.portraitFor) img.src = RB.View.portraitFor(def.id);
+    var hex = '#' + ('000000' + (def.elementColor || 0xffffff).toString(16)).slice(-6);
+    $('ciEl').textContent = def.element || '';
+    $('ciName').textContent = def.name;
+    $('ciName').style.textShadow = '0 0 40px ' + hex + ', 0 6px 0 rgba(0,0,0,.65)';
+    var mv = $('ciMove');
+    mv.textContent = def.superName || '';
+    mv.style.color = hex;
+    mv.style.borderLeftColor = hex;
+    var glow = $('ciGlow');
+    if (glow) glow.style.color = hex;
+    if (img) { img.style.borderColor = hex; img.style.boxShadow = '0 0 44px ' + hex; }
+    el.classList.add('on');
+    el.style.opacity = '0';
+    UI.cutinT = UI.cutinMax;
+  };
+
+  UI.tickCutin = function (dt) {
+    if (UI.cutinT <= 0) return;
+    var el = $('cutin');
+    if (!el) return;
+    /* RB.freeze means "hold the visual state for a capture" — without this the
+       cut-in expires during the several seconds a software-rendered frame can
+       take, and screenshots catch an empty overlay. */
+    if (RB.freeze) { el.style.opacity = '1'; return; }
+    UI.cutinT -= dt;
+    var t = 1 - UI.cutinT / UI.cutinMax;
+    var o;
+    if (t < 0.07) o = t / 0.07;
+    else if (t < 0.80) o = 1;
+    else o = Math.max(0, 1 - (t - 0.80) / 0.20);
+    el.style.opacity = o.toFixed(3);
+    if (UI.cutinT <= 0) {
+      el.classList.remove('on');
+      el.style.opacity = '0';
+    }
   };
 
   UI.toast = function (msg) {

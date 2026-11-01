@@ -81,7 +81,7 @@
     neck.position.y = 0.50;
     torso.add(neck);
     this.neck = neck;
-    this.box(neck, 0.10, 0.08, 0.11, mSkin, 0, 0.02, 0);
+    this.box(neck, 0.115, 0.12, 0.125, mSkin, 0, 0.01, 0);
 
     var head = new T.Group();
     head.position.y = 0.20;
@@ -160,7 +160,13 @@
       };
       baton(a.hand); baton(b.hand);
       this.box(b.sh, 0.26, 0.10, 0.22, m.accent, 0.02, 0.09, 0);            // shoulder guard
-      this.box(this.body, 0.20, 0.30, 0.30 * p.w, m.cloth, -0.11, -0.14, 0); // jacket tail
+      /* Jacket tail hangs from a pivot at the hip so the cloth spring can swing
+         it; a box rotating about its own centre reads as a hinged plank. */
+      var tailG = new T.Group();
+      tailG.position.set(-0.07, 0.05, 0);
+      this.body.add(tailG);
+      this.box(tailG, 0.11, 0.40, 0.26 * p.w, m.cloth, 0, -0.20, 0);
+      this.cloth = [tailG];
       this.box(torso, 0.24, 0.05, 0.46 * p.w, m.accent, 0, 0.10, 0);         // sash
       this.box(head, 0.20, 0.05, 0.21, m.accent, 0, 0.13, 0);                // headband
     }
@@ -171,7 +177,11 @@
       this.box(b.el, 0.17, 0.22, 0.17, m.metal, 0, -0.12, 0);
       this.box(a.sh, 0.24, 0.14, 0.22, m.dark, 0, 0.04, 0);
       this.box(b.sh, 0.24, 0.14, 0.22, m.dark, 0, 0.04, 0);
-      this.box(this.body, 0.26, 0.44, 0.30, m.dark, -0.08, -0.20, 0);
+      var coatG = new T.Group();
+      coatG.position.set(-0.06, 0.07, 0);
+      this.body.add(coatG);
+      this.box(coatG, 0.13, 0.50, 0.26, m.dark, 0, -0.25, 0);
+      this.cloth = [coatG];
       this.box(head, 0.22, 0.08, 0.21, m.metal, 0, 0.10, 0);
       this.box(torso, 0.05, 0.14, 0.14, m.accent, 0.15, 0.34, 0);
     }
@@ -196,11 +206,15 @@
 
     if (this.charId === 'sable') {
       /* Long mantle, floating survey lenses, energy bow */
+      var mantleG = new T.Group();
+      mantleG.position.set(-0.04, 0.34, 0);
+      this.body.add(mantleG);
       var mantle = new T.Mesh(new T.CylinderGeometry(0.18, 0.42, 0.66, 8, 1, true), m.cloth);
-      mantle.position.set(-0.05, 0.02, 0);
+      mantle.position.set(0, -0.33, 0);
       mantle.material.side = T.DoubleSide;
-      this.body.add(mantle);
+      mantleG.add(mantle);
       this.meshes.push(mantle);
+      this.cloth = [mantleG];
 
       this.lenses = [];
       for (var k = 0; k < 2; k++) {
@@ -221,20 +235,21 @@
   };
 
   Rig.prototype.resetPose = function () {
-    this.pose = {
-      hipY: 0, lean: 0, twist: 0, bodyX: 0, headZ: 0, headY: 0,
-      shLz: 0.34, shLx: 0, elLz: -0.95, shRz: 0.55, shRx: 0, elRz: -1.15,
-      hipLz: -0.18, hipLx: 0, kneeLz: -0.26, hipRz: 0.22, hipRx: 0, kneeRz: -0.22
-    };
+    this.pose = basePose();
     this.apply(0);
   };
 
-  /* Fighting stance baseline: staggered feet, hands up, weight forward. */
+  /* Fighting stance baseline: staggered feet, hands up, weight forward.
+     Channels beyond the joint rotations:
+       bodyFx — forward shift of the whole body, used for step-in on strikes
+       headX  — head pitch, used for impact snaps
+       smear  — length multiplier on the striking forearm */
   function basePose() {
     return {
-      hipY: 0, lean: 0.03, twist: 0, bodyX: 0, headZ: 0, headY: 0,
+      hipY: 0, lean: 0.03, twist: 0, bodyX: 0, bodyFx: 0, headZ: 0, headY: 0, headX: 0,
       shLz: 0.34, shLx: 0, elLz: -0.95, shRz: 0.55, shRx: 0, elRz: -1.15,
-      hipLz: -0.18, hipLx: 0, kneeLz: -0.26, hipRz: 0.22, hipRx: 0, kneeRz: -0.22
+      hipLz: -0.18, hipLx: 0, kneeLz: -0.26, hipRz: 0.22, hipRx: 0, kneeRz: -0.22,
+      smearL: 1, smearR: 1
     };
   }
 
@@ -245,20 +260,31 @@
     var breathe = Math.sin(time * 2.4 + f.side * 1.7) * 0.028;
 
     if (s === RB.ST.IDLE) {
+      /* Weight shift: a fighter never stands perfectly still. */
+      var sway = Math.sin(time * 0.9 + f.side * 2.1);
       p.hipY = breathe * 0.6;
+      p.bodyFx = sway * 0.018;
+      p.lean = 0.03 + sway * 0.022;
+      p.twist = sway * 0.035;
       p.shRz = 0.55 + breathe; p.elRz = -1.15 - breathe * 0.4;
       p.shLz = 0.34 - breathe * 0.5; p.elLz = -0.95;
-      p.headZ = 0.03;
+      p.headZ = 0.03 + sway * 0.02;
+      p.headY = sway * 0.10;
     } else if (s === RB.ST.WALK) {
-      var w = Math.sin(time * 8.5 + f.side);
-      p.hipLz = -0.18 + w * 0.42;
-      p.hipRz = 0.22 - w * 0.42;
-      p.kneeLz = -0.26 - Math.max(0, -w) * 0.42;
-      p.kneeRz = -0.22 - Math.max(0, w) * 0.42;
-      p.shLz = 0.34 - w * 0.18;
-      p.shRz = 0.55 + w * 0.18;
-      p.hipY = Math.abs(w) * 0.035;
+      var w = Math.sin(time * 9.5 + f.side);
+      var w2 = Math.cos(time * 9.5 + f.side);
+      p.hipLz = -0.18 + w * 0.55;
+      p.hipRz = 0.22 - w * 0.55;
+      p.kneeLz = -0.20 - Math.max(0, -w) * 0.62;
+      p.kneeRz = -0.18 - Math.max(0, w) * 0.62;
+      p.shLz = 0.34 - w * 0.30;
+      p.shRz = 0.55 + w * 0.30;
+      p.elLz = -0.95 - Math.max(0, w) * 0.35;
+      p.elRz = -1.15 - Math.max(0, -w) * 0.35;
+      p.hipY = Math.abs(w) * 0.045 - 0.012;
       p.lean = 0.07;
+      p.bodyFx = w2 * 0.012;
+      p.headY = w * 0.05;
     } else if (s === RB.ST.CROUCH) {
       p.hipY = -0.26; p.lean = 0.15;
       p.hipLz = 0.42; p.kneeLz = -0.95;
@@ -266,35 +292,51 @@
       p.shLz = 0.75; p.shRz = 0.85; p.elLz = -1.5; p.elRz = -1.55;
       p.headZ = -0.10;
     } else if (s === RB.ST.BLOCK) {
-      p.hipY = -0.10; p.lean = -0.05;
-      p.hipLz = 0.28; p.kneeLz = -0.48;
-      p.hipRz = -0.24; p.kneeRz = -0.46;
-      p.shLz = 1.20; p.shRz = 1.10;
-      p.elLz = -1.85; p.elRz = -1.80;
-      p.headZ = 0.10;
-    } else if (s === RB.ST.BLOCKSTUN) {
-      p.hipY = -0.13; p.lean = -0.15;
+      p.hipY = -0.12; p.lean = -0.07;
       p.hipLz = 0.30; p.kneeLz = -0.52;
       p.hipRz = -0.26; p.kneeRz = -0.50;
-      p.shLz = 1.32; p.shRz = 1.22; p.elLz = -2.0; p.elRz = -1.95;
-      p.headZ = 0.18;
+      p.shLz = 1.24; p.shRz = 1.14;
+      p.elLz = -1.95; p.elRz = -1.90;
+      p.headZ = 0.12; p.headX = 0.10;
+      p.bodyFx = -0.03;
+    } else if (s === RB.ST.BLOCKSTUN) {
+      /* Braced and pushed back: the guard compresses under the hit. */
+      var bs = RB.clamp(f.stunT / 12, 0, 1);
+      p.hipY = -0.13 - bs * 0.03; p.lean = -0.12 - bs * 0.10;
+      p.hipLz = 0.30; p.kneeLz = -0.52;
+      p.hipRz = -0.26; p.kneeRz = -0.50;
+      p.shLz = 1.32 + bs * 0.10; p.shRz = 1.22 + bs * 0.10;
+      p.elLz = -2.0; p.elRz = -1.95;
+      p.headZ = 0.16; p.headX = bs * 0.14;
+      p.bodyFx = -bs * 0.05;
     } else if (s === RB.ST.JUMP) {
-      p.hipLz = 0.48; p.kneeLz = -0.85;
-      p.hipRz = -0.30; p.kneeRz = -0.45;
-      p.shLz = 0.7; p.shRz = 0.8; p.elLz = -1.0; p.elRz = -1.1;
-      p.lean = 0.08;
+      /* Tuck on the way up, extend on the way down. */
+      var rise = RB.clamp((f.vy || 0) / 9, -1, 1);
+      p.hipLz = 0.48 + rise * 0.12; p.kneeLz = -0.85 - Math.max(0, rise) * 0.35;
+      p.hipRz = -0.30 - rise * 0.10; p.kneeRz = -0.45 - Math.max(0, -rise) * 0.30;
+      p.shLz = 0.70 - rise * 0.15; p.shRz = 0.80 - rise * 0.15;
+      p.elLz = -1.0; p.elRz = -1.1;
+      p.lean = 0.08 + rise * 0.06;
     } else if (s === RB.ST.DASH) {
-      p.lean = 0.32;
-      p.hipLz = 0.55; p.kneeLz = -0.6;
-      p.hipRz = -0.5; p.kneeRz = -0.2;
-      p.shLz = -0.3; p.shRz = 0.9; p.elRz = -0.7; p.elLz = -1.2;
+      var dk = RB.clamp(f.stateT / 8, 0, 1);
+      p.lean = 0.20 + dk * 0.20;
+      p.hipLz = 0.55 + dk * 0.12; p.kneeLz = -0.60 - dk * 0.20;
+      p.hipRz = -0.50; p.kneeRz = -0.20;
+      p.shLz = -0.30 - dk * 0.25; p.shRz = 0.90; p.elRz = -0.70; p.elLz = -1.20;
+      p.bodyFx = dk * 0.05;
     } else if (s === RB.ST.HIT) {
-      var sev = Math.min(1, f.stunT / 12);
-      p.lean = -0.20 - sev * 0.18;
-      p.headZ = -0.30;
-      p.shLz = -0.35; p.shRz = -0.15; p.elLz = -0.7; p.elRz = -0.7;
+      /* Snap out fast, settle back slow — the shape of an impact. Angles are
+         kept modest: past ~0.5 rad total the head visibly separates from the
+         collar because the neck is short. */
+      var sev = RB.clamp(f.stunT / 12, 0, 1);
+      p.lean = -0.10 - sev * 0.18;
+      p.headZ = -0.08 - sev * 0.20;
+      p.headX = sev * 0.16;
+      p.shLz = -0.30 - sev * 0.20; p.shRz = -0.10 - sev * 0.16;
+      p.elLz = -0.70; p.elRz = -0.70;
       p.hipLz = -0.26; p.hipRz = 0.34;
-      p.hipY = -0.04;
+      p.hipY = -0.04 - sev * 0.03;
+      p.bodyFx = -sev * 0.05;
     } else if (s === RB.ST.AIRHIT) {
       p.lean = -0.5;
       p.bodyX = Math.sin(time * 11) * 0.85;
@@ -351,94 +393,178 @@
     return p;
   };
 
+  /* Three-phase envelope instead of a single ramp. The old version only ever
+     moved 22% forward during startup and then eased back, so a 3-frame jab
+     looked like a twitch rather than a strike. */
   Rig.prototype.attackPose = function (p, f, time) {
     var mv = f.move;
     if (!mv) return;
     var id = mv.id;
     var t = f.moveFrame;
-    var s0 = mv.startup, a1 = mv.startup + mv.active;
-    var wind = t < s0 ? t / Math.max(1, s0) : 1;
-    var hold = t >= s0 && t < a1 ? 1 : t >= a1 ? Math.max(0, 1 - (t - a1) / Math.max(1, mv.recovery)) : 0;
-    var ext = t < s0 ? RB.ease.outQuad(wind) * 0.22 : hold;
+    var s0 = Math.max(1, mv.startup);
+    var a1 = mv.startup + Math.max(1, mv.active);
+    var rec = Math.max(1, mv.recovery);
+
+    var ext, smear = 1;
+    if (t < mv.startup) {
+      /* Anticipation: pull the limb back before it fires. */
+      var wind = RB.clamp(t / s0, 0, 1);
+      ext = -0.30 * RB.ease.outQuad(wind);
+    } else if (t < a1) {
+      /* Snap through the active window, peaking slightly past full extension. */
+      var at = (t - mv.startup) / Math.max(1, mv.active);
+      ext = 1 + 0.12 * Math.sin(at * Math.PI);
+      /* Limb smear peaks right at the start of the active window. Kept
+         deliberately small — past ~1.2 the forearm reads as rubber. */
+      smear = 1 + 0.16 * Math.max(0, 1 - at * 2.2);
+    } else {
+      /* Follow-through: still committed while the move settles. */
+      var rt = RB.clamp((t - a1) / rec, 0, 1);
+      ext = (1 - RB.ease.outCubic(rt)) * 0.92;
+    }
+
+    var arm = 'R';
+    var step = mv.dmg >= 9 ? 0.15 : 0.08;
 
     if (id.indexOf('5L') > -1) {
-      p.shRz = 0.55 + ext * 1.35;
+      p.shRz = 0.55 + ext * 1.40;
       p.elRz = -1.15 + ext * 1.15;
-      p.shLz = 0.30 - ext * 0.35;
-      p.elLz = -0.95;
-      p.lean = 0.04 + ext * 0.12;
-      p.twist = -0.35 * ext;
-      p.hipRz = 0.22 - ext * 0.2;
+      p.shLz = 0.30 - ext * 0.38;
+      p.elLz = -0.95 - Math.max(0, ext) * 0.20;
+      p.lean = 0.04 + ext * 0.13;
+      p.twist = -0.38 * ext;
+      p.hipRz = 0.22 - ext * 0.22;
+      p.headZ = 0.03 + ext * 0.05;
+      step = 0.075;
     } else if (id.indexOf('5H') > -1) {
-      p.shRz = -0.5 + ext * 2.0;
-      p.elRz = -1.6 + ext * 1.4;
-      p.shLz = 0.55 - ext * 0.7;
-      p.lean = -0.14 + ext * 0.30;
-      p.twist = -0.75 + ext * 1.05;
-      p.hipLz = 0.30; p.kneeLz = -0.35;
-      p.hipRz = -0.35 - ext * 0.15;
+      p.shRz = -0.50 + ext * 2.05;
+      p.elRz = -1.60 + ext * 1.45;
+      p.shLz = 0.55 - ext * 0.75;
+      p.elLz = -0.95 - Math.max(0, ext) * 0.35;
+      p.lean = -0.14 + ext * 0.32;
+      p.twist = -0.80 + ext * 1.10;
+      p.hipLz = 0.30 - ext * 0.10; p.kneeLz = -0.35 - Math.max(0, ext) * 0.18;
+      p.hipRz = -0.35 - ext * 0.18; p.kneeRz = -0.22 - Math.max(0, ext) * 0.30;
+      p.hipY = -0.02 - Math.max(0, ext) * 0.03;
+      p.headZ = 0.03 - ext * 0.10;
+      step = 0.16;
     } else if (id.indexOf('2K') > -1) {
-      p.hipY = -0.24 + ext * 0.04;
-      p.lean = 0.22;
-      p.hipRz = 0.15 + ext * 1.30;
-      p.kneeRz = -1.05 + ext * 1.0;
+      p.hipY = -0.24 + ext * 0.05;
+      p.lean = 0.22 - ext * 0.06;
+      p.hipRz = 0.15 + ext * 1.35;
+      p.kneeRz = -1.05 + ext * 1.05;
       p.hipLz = 0.45; p.kneeLz = -0.85;
-      p.shLz = 0.6; p.shRz = 0.5; p.elLz = -1.3; p.elRz = -1.2;
-      p.twist = -0.28 * ext;
+      p.shLz = 0.60; p.shRz = 0.50; p.elLz = -1.30; p.elRz = -1.20;
+      p.twist = -0.30 * ext;
+      p.hipY -= Math.max(0, ext) * 0.04;
+      arm = null;
+      step = 0.05;
     } else if (id.indexOf('4C') > -1) {
-      p.shRz = 0.45 + ext * 2.3;
-      p.elRz = -1.7 + ext * 1.55;
-      p.shLz = 0.30 + ext * 1.1;
-      p.elLz = -1.0;
-      p.lean = 0.14 - ext * 0.42;
-      p.hipY = -0.22 + ext * 0.46;
+      /* Launcher: drop, then drive upward. */
+      p.shRz = 0.45 + ext * 2.35;
+      p.elRz = -1.70 + ext * 1.60;
+      p.shLz = 0.30 + ext * 1.15;
+      p.elLz = -1.00 - Math.max(0, ext) * 0.30;
+      p.lean = 0.14 - ext * 0.44;
+      p.hipY = -0.22 + ext * 0.48;
       p.hipLz = 0.55 - ext * 0.35;
-      p.kneeLz = -0.95 + ext * 0.75;
-      p.hipRz = -0.45 + ext * 0.2;
-      p.headZ = 0.14;
+      p.kneeLz = -0.95 + ext * 0.78;
+      p.hipRz = -0.45 + ext * 0.22;
+      p.kneeRz = -0.22 - Math.max(0, ext) * 0.25;
+      p.headZ = 0.14 - ext * 0.18;
+      step = 0.12;
     } else if (id.indexOf('6S') > -1 || id.indexOf('2S') > -1) {
-      p.lean = 0.30;
-      p.shRz = 0.35 + ext * 1.35;
-      p.shLz = 0.35 + ext * 0.85;
-      p.elLz = -0.5; p.elRz = -0.55;
+      p.lean = 0.30 + ext * 0.10;
+      p.shRz = 0.35 + ext * 1.40;
+      p.shLz = 0.35 + ext * 0.90;
+      p.elLz = -0.50; p.elRz = -0.55;
       p.hipLz = 0.65; p.kneeLz = -0.55;
       p.hipRz = -0.55; p.kneeRz = -0.22;
-      p.twist = -0.3 * ext;
+      p.twist = -0.32 * ext;
+      arm = 'B';
+      step = 0.14;
     } else if (id.indexOf('tag') > -1) {
-      p.shRz = 0.5 + ext * 1.3;
-      p.shLz = 0.5 + ext * 1.3;
-      p.elRz = -0.4; p.elLz = -0.4;
-      p.lean = 0.2;
+      p.shRz = 0.50 + ext * 1.35;
+      p.shLz = 0.50 + ext * 1.35;
+      p.elRz = -0.40; p.elLz = -0.40;
+      p.lean = 0.20;
+      arm = 'B';
+      step = 0.06;
     } else if (id.indexOf('throw') > -1) {
-      p.shRz = 0.55 + ext * 1.05;
-      p.shLz = 0.55 + ext * 1.05;
-      p.elRz = -0.75 + ext * 0.4;
-      p.elLz = -0.75 + ext * 0.4;
-      p.lean = 0.1 + ext * 0.2;
+      p.shRz = 0.55 + ext * 1.10;
+      p.shLz = 0.55 + ext * 1.10;
+      p.elRz = -0.75 + ext * 0.45;
+      p.elLz = -0.75 + ext * 0.45;
+      p.lean = 0.10 + ext * 0.22;
       p.hipY = -0.07;
-      p.hipLz = 0.3; p.hipRz = -0.3;
+      p.hipLz = 0.30; p.hipRz = -0.30;
+      arm = 'B';
+      step = 0.10;
     }
+
+    /* Step into the strike, then give the ground back on recovery. */
+    p.bodyFx = ext * step;
+    if (arm === 'R') p.smearR = smear;
+    else if (arm === 'L') p.smearL = smear;
+    else if (arm === 'B') { p.smearR = smear; p.smearL = smear; }
   };
 
-  /* Blend the current pose toward the target and write it onto the rig. */
+  /* Blend the current pose toward the target and write it onto the rig.
+     The rate is per-state: a fixed 11%/tick meant a 3-frame jab only reached
+     about a third of its extension before recovery began, which is what made
+     every strike read as a twitch. */
   Rig.prototype.applyPose = function (f, dt, time) {
     var target = this.targetPose(f, time);
-    var k = 1 - Math.pow(0.0008, dt);
+    var st = f.state, S = RB.ST;
+    var rate;
+    if (st === S.ATTACK) rate = 58;
+    else if (st === S.SUPER || st === S.FURYBURST || st === S.TAGIN) rate = 34;
+    else if (st === S.HIT || st === S.AIRHIT || st === S.BLOCKSTUN || st === S.GUARDCRUSH) rate = 27;
+    else if (st === S.DASH) rate = 26;
+    else if (st === S.KNOCKDOWN || st === S.KO || st === S.WAKEUP) rate = 18;
+    else rate = 11;
+
+    var k = 1 - Math.exp(-rate * dt);
     for (var key in target) {
       if (this.pose[key] == null) this.pose[key] = target[key];
       this.pose[key] += (target[key] - this.pose[key]) * k;
     }
+    this.secondary(dt);
     this.apply(time);
+  };
+
+  /* Cloth lag. A damped spring driven by the torso's own rotation: the jacket
+     and mantle trail the body instead of being welded to it. */
+  Rig.prototype.secondary = function (dt) {
+    if (!this.cloth || !this.cloth.length) return;
+    var s = this.sec || (this.sec = { z: 0, v: 0 });
+    var target = -this.pose.lean * 0.85 - this.pose.twist * 0.30;
+    var w = 15, zeta = 0.52;
+    var acc = w * w * (target - s.z) - 2 * zeta * w * s.v;
+    s.v += acc * dt;
+    s.z += s.v * dt;
+    s.z = RB.clamp(s.z, -1.0, 1.0);
+    for (var i = 0; i < this.cloth.length; i++) {
+      this.cloth[i].rotation.z = s.z;
+    }
+  };
+
+  /* World-space position of a hand, for attack trails. */
+  Rig.prototype.handPos = function (side, out) {
+    var a = side === 0 ? this.armR : this.armL;
+    return a.hand.getWorldPosition(out || new T.Vector3());
   };
 
   Rig.prototype.apply = function (time) {
     var p = this.pose;
     this.body.position.y = 0.82 + p.hipY;
+    this.body.position.x = p.bodyFx || 0;
     this.body.rotation.z = p.lean;
     this.body.rotation.y = p.twist;
     this.body.rotation.x = p.bodyX;
     this.head.rotation.z = p.headZ;
     this.head.rotation.y = p.headY;
+    this.head.rotation.x = p.headX || 0;
 
     this.armL.sh.rotation.z = p.shLz;
     this.armL.sh.rotation.x = p.shLx;
@@ -446,6 +572,14 @@
     this.armR.sh.rotation.z = p.shRz;
     this.armR.sh.rotation.x = p.shRx;
     this.armR.el.rotation.z = p.elRz;
+
+    /* Smear: stretch the forearm along its own length during the fastest part
+       of a strike, and counter-scale the fist so it keeps its size. */
+    var sl = p.smearL || 1, sr = p.smearR || 1;
+    this.armL.el.scale.y = sl;
+    this.armL.hand.scale.y = 1 / sl;
+    this.armR.el.scale.y = sr;
+    this.armR.hand.scale.y = 1 / sr;
 
     this.legL.hip.rotation.z = p.hipLz;
     this.legL.hip.rotation.x = p.hipLx;

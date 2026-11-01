@@ -46,6 +46,10 @@ canvas#cv{position:fixed;inset:0;width:100%;height:100%;display:block}
 .side.left .nm{color:#dff6ff}
 .side.right .nm{color:#ffe4e0}
 
+/* Overdrive chip: appears under the name when the fighter is below 30% health. */
+.side.od .nm{color:#ffb08a;text-shadow:0 2px 0 #000,0 0 22px rgba(255,110,60,.9)}
+.side.od .arch::after{content:' · OVERDRIVE';color:#ff8a5a;font-weight:700}
+
 .bar{position:relative;height:26px;background:rgba(0,0,0,.62);border:2px solid rgba(255,255,255,.85);
   transform:skewX(-18deg);overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.55)}
 .bar .fill,.bar .ghost{position:absolute;top:0;bottom:0;left:0;width:100%;
@@ -125,16 +129,44 @@ canvas#cv{position:fixed;inset:0;width:100%;height:100%;display:block}
 #announce{position:fixed;left:0;right:0;top:34%;text-align:center;z-index:35;pointer-events:none;
   font-family:var(--head);font-size:min(13vw,132px);letter-spacing:.04em;font-style:italic;
   color:#fff;text-shadow:0 0 40px rgba(255,210,74,.55),0 6px 0 #000;opacity:0}
-#announce.go{animation:ann 1.5s ease-out forwards}
+#announce.go{display:block}
 #announce.small{font-size:min(8vw,74px)}
-@keyframes ann{
-  0%{opacity:0;transform:scale(1.5) skewX(-8deg)}
-  14%{opacity:1;transform:scale(1) skewX(-8deg)}
-  72%{opacity:1;transform:scale(1.02) skewX(-8deg)}
-  100%{opacity:0;transform:scale(1.1) skewX(-8deg)}
-}
+/* Opacity and scale are driven by UI.tickAnnounce, not a keyframe. */
 
-/* ------------------------------------------------------------------ pops */
+/* ---------------------------------------------------------------- cut-in */
+/* Full-screen super cut-in. The reference clips use painted portrait art; this
+   rig is procedural boxes, and a full-bleed crop of it reads as abstract slabs.
+   So the cut-in carries the beat with typography, colour and motion instead,
+   with the (already good) HUD portrait as a medallion. */
+#cutin{position:fixed;inset:0;z-index:38;pointer-events:none;opacity:0;overflow:hidden;
+  display:none;will-change:opacity}
+#cutin.on{display:block}
+#cutin .ci-bg{position:absolute;inset:0;
+  background:linear-gradient(100deg,rgba(4,8,14,.94) 0%,rgba(4,8,14,.86) 44%,rgba(4,8,14,0) 76%)}
+#cutin .ci-glow{position:absolute;left:-10%;top:4%;width:70%;height:92%;
+  background:radial-gradient(closest-side,currentColor,transparent 70%);
+  opacity:.26;filter:blur(14px)}
+#cutin .ci-lines{position:absolute;inset:-30%;
+  background:repeating-linear-gradient(102deg,rgba(255,255,255,.13) 0 2px,transparent 2px 11px);
+  opacity:.55}
+#cutin .ci-port{position:absolute;left:7%;top:16%;width:112px;height:112px;border-radius:50%;
+  object-fit:cover;border:3px solid currentColor;box-shadow:0 0 44px currentColor;
+  transform:skewX(-4deg)}
+#cutin .ci-text{position:absolute;left:7%;top:38%;max-width:60%;
+  font-family:var(--head);text-transform:uppercase;transform:skewX(-9deg)}
+#cutin .ci-el{display:block;font-family:var(--body);font-size:13px;font-weight:700;
+  letter-spacing:.42em;color:#fff;opacity:.85;margin-bottom:6px}
+#cutin b{display:block;font-size:min(9vw,96px);line-height:.88;color:#fff;font-style:italic;
+  text-shadow:0 0 38px currentColor,0 6px 0 rgba(0,0,0,.65)}
+#cutin i{display:block;margin-top:10px;font-family:var(--body);font-style:normal;
+  font-size:min(2.1vw,22px);letter-spacing:.30em;font-weight:700;color:#fff;opacity:.92;
+  border-left:4px solid currentColor;padding-left:12px}
+@keyframes ciHold{
+  0%{opacity:0}
+  6%{opacity:1}
+  78%{opacity:1}
+  100%{opacity:0}
+}/* ------------------------------------------------------------------ pops */
 .pop{position:absolute;font-family:var(--head);font-size:34px;color:#fff;
   text-shadow:0 2px 0 #000,0 0 18px currentColor;pointer-events:none;
   animation:pop .72s cubic-bezier(.2,.9,.3,1) forwards;white-space:nowrap}
@@ -146,6 +178,9 @@ canvas#cv{position:fixed;inset:0;width:100%;height:100%;display:block}
 @keyframes tagin{from{transform:translateX(-14px) skewX(-8deg);opacity:0}
   to{transform:none;opacity:1}}
 .pop.tag{font-family:var(--body);font-size:12px;letter-spacing:.24em;font-weight:700}
+.pop.tag.big{font-family:var(--head);font-size:30px;font-style:italic;letter-spacing:.10em;
+  -webkit-text-stroke:1.5px rgba(0,0,0,.85);paint-order:stroke fill;
+  text-shadow:0 0 26px currentColor,0 3px 0 #000}
 @keyframes pop{
   0%{opacity:0;transform:translate(-50%,0) scale(.6)}
   18%{opacity:1;transform:translate(-50%,-14px) scale(1.06)}

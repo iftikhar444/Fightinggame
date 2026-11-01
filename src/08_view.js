@@ -16,6 +16,7 @@
     projMeshes: new Map(), trapMeshes: new Map(),
     boxHelpers: [], hud: null,
     flashRig: 0, superLineT: 0, superColor: 0xffffff,
+    _hpPrev: {}, _hp: null,
     lastPhase: ''
   };
 
@@ -164,16 +165,32 @@
       var accent = match.sides[side].team[0].def.colors.accent;
       switch (e.type) {
         case 'hit':
-          RB.VFX.hit(e.x, e.y, e.superHit ? 0xfff2b0 : accent, e.launch || e.dmg > 9, e.side === 0 ? 1 : -1, e.counter);
+          var el = e.color || accent;
+          RB.VFX.hit(e.x, e.y, e.superHit ? 0xfff2b0 : el, e.launch || e.dmg > 9, e.side === 0 ? 1 : -1, e.counter);
+          /* Counter / punish pops the attacker's element — the loudest moment
+             in the reference clips, so it gets its own ring + spokes. */
+          if (e.burst) RB.VFX.elementBurst(e.x, e.y, el);
           /* Defender flash: Rig.setFlash existed but nothing ever set it. */
           var dRig = rigFor(match.fighters[1 - side]);
-          if (dRig) dRig.setFlash(e.dmg > 9 ? 0.30 : 0.18);
-          if (e.launch) RB.VFX.launch(e.x, e.y, accent);
+          if (dRig) dRig.setFlash(e.dmg > 9 ? 0.24 : 0.15);
+          if (e.launch) RB.VFX.launch(e.x, e.y, el);
           RB.Audio.play(e.dmg > 9 ? 'hitHeavy' : 'hitLight', e.counter);
           if (e.counter) RB.Audio.play('guardCrush');
           V.shake = Math.min(0.5, V.shake + (e.dmg > 9 ? 0.30 : 0.14));
           V.kick = e.dmg > 9 ? 0.06 : 0.02;
           RB.UI.popDamage(e.x, e.y, e.dmg, e.counter, e.punish, e.combo, e.superHit);
+          break;
+        case 'parry':
+          RB.VFX.parry(e.x, e.y, e.color || 0x9fe6ff);
+          RB.Audio.play('block');
+          RB.Audio.play('guardCrush');
+          V.shake = Math.min(0.4, V.shake + 0.18);
+          RB.UI.popText(e.x, e.y + 0.3, 'PARRY', '#dff6ff', 'big');
+          break;
+        case 'overdrive':
+          RB.VFX.elementBurst(e.x, 1.0, match.sides[side].team[0].def.elementColor);
+          RB.Audio.play('furyArt');
+          RB.UI.popText(e.x, 1.9, 'OVERDRIVE', '#ff7a5a', 'big');
           break;
         case 'block':
           RB.VFX.block(e.x, e.y, 0x9fe6ff);
@@ -206,7 +223,7 @@
           /* Speed lines for the duration of the super, not a single frame. */
           V.superLineT = 1.15;
           V.superColor = accent;
-          RB.UI.bigAnnounce(match.sides[side].team[0].def.superName.toUpperCase(), 'super');
+          RB.UI.superCutin(match.sides[side].team[0].def);
           break;
         case 'cinematicStart':
           V.camX = e.x;
@@ -380,6 +397,42 @@
         if (f.furyArtT > 0 && Math.random() < 0.35) {
           RB.VFX.aura(f.x + (Math.random() - 0.5) * 0.6, 0.2 + Math.random() * 1.4, 0xffb347);
         }
+        /* Overdrive aura: a slow pulse at the feet while the state is armed, so
+           the comeback is legible from the other side of the screen. */
+        if (f.overdrive && Math.random() < 0.12) {
+          RB.VFX.overdrivePulse(f.x, 0, f.def.elementColor);
+        }
+        /* Dash afterimages — motion streaks in the fighter's element colour. */
+        if (f.state === RB.ST.DASH && Math.random() < 0.55) {
+          RB.VFX.trail(f.x - f.face * 0.30, 0.45 + Math.random() * 0.9, f.def.elementColor);
+        }
+        /* Attack trails: a short streak dragged from the striking hand during
+           the active frames only. This is what sells the speed of a strike —
+           the pose alone always reads slower than the hitbox.
+           The previous sample is kept through startup on purpose: the biggest
+           hand movement is the wind-up -> extension snap, and dropping the
+           sample before the active window throws exactly that away. */
+        var trail = f.state === RB.ST.ATTACK && f.move;
+        if (trail) {
+          var mfa = f.moveFrame;
+          var inActive = mfa >= f.move.startup && mfa < f.move.startup + f.move.active;
+          var hp = rig.handPos(0, V._hp || (V._hp = new T.Vector3()));
+          var prev = V._hpPrev[f.id];
+          if (inActive && prev) {
+            var dx = hp.x - prev.x, dy = hp.y - prev.y;
+            var sp = Math.sqrt(dx * dx + dy * dy);
+            if (sp > 0.02) {
+              var ang = Math.atan2(dy, dx);
+              RB.VFX.slashTrail((hp.x + prev.x) / 2, (hp.y + prev.y) / 2,
+                f.def.colors.accent, ang, Math.min(0.9, sp * 1.8));
+            }
+          }
+          if (!prev) V._hpPrev[f.id] = new T.Vector3();
+          V._hpPrev[f.id].copy(hp);
+        } else {
+          delete V._hpPrev[f.id];
+        }
+
         /* hit flash decay */
         if (rig.flash > 0 && !RB.freeze) rig.setFlash(Math.max(0, rig.flash - dt * 8));
       });

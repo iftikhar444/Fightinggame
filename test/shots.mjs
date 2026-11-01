@@ -97,9 +97,43 @@ async function landHit(extra) {
   await page.waitForTimeout(110);
 }
 
+/* Freeze a strike on its first active frame. Ticks are stepped one per
+   rendered frame so the attack-trail code (which compares hand positions
+   between renders) actually has two samples to work with. */
+async function strikeShot(stage) {
+  await setup(stage, -0.95, 0.62);
+  await page.evaluate(async () => {
+    const RB = window.RIFTBOUND.RB;
+    const g = window.RIFTBOUND.Game;
+    const m = g.match;
+    const f = m.fighters[0];
+    const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
+    for (let i = 0; i < 40; i++) {
+      g.latch[0] = i === 0 ? RB.IN.HEAVY : 0;
+      g.advance(1);
+      if (f.state === 'attack') break;
+    }
+    /* Pause before stepping by hand: the render loop still runs (so trails get
+       their second hand sample) but the auto-stepper can't drift the fighters
+       apart while we wait for frames. Freeze immediately — a 0.15 s particle
+       spawned mid-loop would otherwise expire during the next frame wait. */
+    g.paused = true;
+    RB.freeze = true;
+    let guard = 0;
+    while (f.moveFrame < f.move.startup + 2 && guard++ < 20) {
+      g.advance(1);
+      await raf();
+    }
+    await raf();
+  });
+  await page.waitForTimeout(140);
+}
+
 const SHOTS = {
   '01_foundry_neutral': async () => setup(0, -1.2, 1.2),
   '02_foundry_hit': async () => { await setup(0, -0.85, 0.55); await landHit(0); },
+  '09_foundry_strike': async () => strikeShot(0),
+  '10_temple_strike': async () => strikeShot(1),
   '03_foundry_jump': async () => {
     await setup(0, -1.4, 1.2);
     await page.evaluate(() => {
@@ -193,6 +227,9 @@ const info = await page.evaluate(() => {
     inFrame: heads.every((h) => Math.abs(h.x) <= 1 && Math.abs(h.y) <= 1),
     calls: V.renderer.info.render.calls,
     fx: RB.VFX.fx.length,
+    mv: m.fighters[0].move ? (m.fighters[0].move.id + '@' + m.fighters[0].moveFrame) : null,
+    st: m.fighters[0].state,
+    trailPrev: Object.keys(V._hpPrev || {}).length,
     scale: V.pixelScale || 1
   };
 });

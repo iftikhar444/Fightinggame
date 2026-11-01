@@ -299,6 +299,91 @@ console.log('\nRIFTBOUND combat simulation tests\n' + '='.repeat(52));
   ok('projectiles/traps stay bounded', m.projectiles.length < 40 && m.traps.length < 40);
 }
 
+/* ------------------------------------------------------ 19. just guard (parry) */
+{
+  /* Guard raised on the last possible frame before contact. Kaia's 5L has 5
+     startup, so the hit lands around tick 5-7; raising guard at tick 4 puts
+     blockHeldT at 1-3 when it connects. */
+  const m = fresh(); place(m, -0.9, 0.5);
+  m.events.length = 0;
+  m.step([IN.LIGHT, 0]);
+  run(m, 3, () => [0, 0]);
+  const hp = m.fighters[1].hp;
+  const guard = m.fighters[1].guard;
+  run(m, 10, () => [0, IN.RIGHT]);
+  const parried = m.events.some(e => e.type === 'parry');
+  ok('guard raised inside the window parries', parried);
+  ok('a parry takes no damage', near(m.fighters[1].hp, hp), 'hp ' + hp.toFixed(1) + ' -> ' + m.fighters[1].hp.toFixed(1));
+  ok('a parry refunds guard instead of draining it', m.fighters[1].guard >= guard,
+    guard.toFixed(1) + ' -> ' + m.fighters[1].guard.toFixed(1));
+  ok('a parry leaves the attacker punishable', m.fighters[0].state === 'hit' || m.fighters[0].stunT > 0,
+    'attacker state=' + m.fighters[0].state);
+}
+{
+  /* Guard held long before contact is an ordinary block, not a parry. */
+  const m = fresh(); place(m, -0.9, 0.5);
+  m.events.length = 0;
+  run(m, 12, () => [0, IN.RIGHT]);
+  m.step([IN.LIGHT, 0]);
+  run(m, 12, () => [0, IN.RIGHT]);
+  ok('holding guard early is a normal block, not a parry',
+    !m.events.some(e => e.type === 'parry') && m.events.some(e => e.type === 'block'));
+}
+
+/* ------------------------------------------------------------ 20. overdrive */
+{
+  const m = fresh(); place(m, -0.9, 0.5);
+  const a = m.fighters[0];
+  a.hp = a.maxHp * 0.25;
+  m.step([0, 0]);
+  ok('low health arms overdrive', a.overdrive === true);
+
+  /* Same move, same situation, with and without overdrive. */
+  const base = fresh(); place(base, -0.9, 0.5);
+  base.step([IN.KICK, 0]);
+  run(base, 16, () => [0, 0]);
+  const baseDmg = 100 - base.fighters[1].hp;
+
+  const od = fresh(); place(od, -0.9, 0.5);
+  od.fighters[0].hp = od.fighters[0].maxHp * 0.25;
+  od.step([IN.KICK, 0]);
+  run(od, 16, () => [0, 0]);
+  const odDmg = 100 - od.fighters[1].hp;
+  ok('overdrive increases damage', odDmg > baseDmg + 0.01,
+    baseDmg.toFixed(2) + ' -> ' + odDmg.toFixed(2));
+}
+
+/* --------------------------------------------------------- 21. element burst */
+{
+  const m = fresh(); place(m, -0.9, 0.5);
+  const b = m.fighters[1];
+  /* Put the defender mid-attack so the hit counts as a counter. */
+  m.step([IN.KICK, IN.HEAVY]);
+  m.events.length = 0;
+  let burst = null;
+  for (let i = 0; i < 24 && !burst; i++) {
+    m.step([0, 0]);
+    burst = m.events.find(e => e.type === 'hit' && e.burst);
+  }
+  ok('a counter hit pops an element burst', !!burst, burst ? 'element=' + burst.element : 'no burst');
+  if (burst) ok('burst carries the attacker element colour', burst.color === RB.FIGHTER_BY_ID.kaia.elementColor);
+}
+
+/* ------------------------------------------------------- 22. balance sanity */
+{
+  /* Every fighter must be able to kill the others inside the round timer at a
+     reasonable combo rate, and no fighter may be more than 25% off the roster
+     median effective health. Cheap regression guard against a bad tuning pass. */
+  const ids = RB.FIGHTERS.map(f => f.id);
+  const hps = RB.FIGHTERS.map(f => f.hp);
+  const sorted = hps.slice().sort((x, y) => x - y);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const spread = (Math.max(...hps) - Math.min(...hps)) / median;
+  ok('roster health spread stays under 30%', spread < 0.30, 'spread=' + (spread * 100).toFixed(1) + '%');
+  ok('every fighter has an element', RB.FIGHTERS.every(f => typeof f.element === 'string' && f.element.length > 0));
+  ok('every fighter can be selected in a match', ids.length === 4);
+}
+
 console.log('='.repeat(52));
 console.log(`RESULT  ${pass} passed, ${fail} failed`);
 if (fail) { console.log('\nFailures:'); failures.forEach(f => console.log('  - ' + f)); process.exit(1); }

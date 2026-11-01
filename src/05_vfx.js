@@ -391,12 +391,71 @@
     spawn('soft', { x: x, y: y, color: color, size: 0.55, life: 0.2, grow: 0.4, fade: 0.6 });
   };
 
+  /* A streak dragged along the swing path. `ang` is the direction of travel in
+     screen space, `power` scales length — fast limbs leave longer streaks.
+     Kept short on purpose: the fighter is under 2 units tall, so anything past
+     ~0.9 units stops reading as a slash and starts reading as a bar.
+     Note: spawn() applies sx/sy as absolute scale, so `size` is unused here. */
+  V.slashTrail = function (x, y, color, ang, power) {
+    power = power || 1;
+    spawn('streak', {
+      x: x, y: y, color: color,
+      sx: 0.30 + power * 0.55,
+      sy: 0.075 + power * 0.045,
+      rot: ang,
+      life: 0.07 + power * 0.04, grow: 1.2, fade: 0.8
+    });
+  };
+
   V.superLine = function (x, y, color, dir) {
     spawn('streak', {
       x: x, y: y, color: color, size: 5 + Math.random() * 4,
       sx: 5, sy: 0.06, rot: 0, life: 0.22, grow: 1, fade: 0.7,
       vx: dir * 6
     });
+  };
+
+  /* Element burst: the big coloured pop on a counter or punish. Reference
+     clips sell these with a ring plus radial spokes, so that is what this is. */
+  V.elementBurst = function (x, y, color) {
+    spawn('ring', { x: x, y: y, color: color, size: 0.55, life: 0.34, grow: 7.5, fade: 0.95 });
+    spawn('ring', { x: x, y: y, color: 0xffffff, size: 0.30, life: 0.20, grow: 5.0, fade: 0.9 });
+    spawn('burst', {
+      x: x, y: y, color: color, size: 0.95, life: 0.22, grow: 2.0, fade: 1,
+      rot: Math.random() * 0.8 - 0.4
+    });
+    for (var i = 0; i < 9; i++) {
+      var a = (i / 9) * Math.PI * 2 + Math.random() * 0.3;
+      spawn('streak', {
+        x: x, y: y, color: color,
+        sx: 0.85 + Math.random() * 0.5, sy: 0.09,
+        rot: a,
+        vx: Math.cos(a) * 3.4, vy: Math.sin(a) * 3.4,
+        life: 0.20 + Math.random() * 0.1, grow: 1.1, fade: 0.9
+      });
+    }
+    V.flash('#ffffff', 0.45, 0.07);
+  };
+
+  /* Parry: a hard, bright shield ping — white core, cyan ring, no warmth. */
+  V.parry = function (x, y, color) {
+    spawn('ring', { x: x, y: y, color: 0xffffff, size: 0.30, life: 0.24, grow: 4.2, fade: 1 });
+    spawn('ring', { x: x, y: y, color: color || 0x9fe6ff, size: 0.5, life: 0.32, grow: 3.0, fade: 0.8 });
+    spawn('soft', { x: x, y: y, color: 0xffffff, size: 0.55, life: 0.12, grow: 1.4, fade: 1 });
+    for (var i = 0; i < 8; i++) {
+      var a = (i / 8) * Math.PI * 2;
+      spawn('streak', {
+        x: x, y: y, color: 0xdff6ff,
+        sx: 0.55, sy: 0.07, rot: a,
+        vx: Math.cos(a) * 2.2, vy: Math.sin(a) * 2.2,
+        life: 0.16, grow: 1.0, fade: 0.95
+      });
+    }
+  };
+
+  /* Overdrive: a persistent low aura ring that the view re-arms while armed. */
+  V.overdrivePulse = function (x, y, color) {
+    spawn('ring', { x: x, y: 0.05, color: color, size: 0.7, life: 0.5, grow: 2.4, fade: 0.45 });
   };
 
   V.quality = 1;

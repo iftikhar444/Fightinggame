@@ -38,7 +38,32 @@
     throwRange: 1.25,
     throwBreakWindow: 10,
     wallSplatX: 8.45,
-    hitstopScale: 1.0
+    hitstopScale: 1.5,
+
+    /* ---- Just Guard (parry) -------------------------------------------------
+       Hold guard within `parryWindow` ticks of the hit connecting. Beats chip,
+       refunds guard, builds meter, and stuns the attacker long enough to punish.
+       Late = normal block. Early = normal block. It only rewards timing. */
+    parryWindow: 4,           // ticks of guard-held that still count as a parry
+    parryStun: 22,            // attacker stun on a successful parry
+    parryMeter: 16,           // meter the parrier gains
+    parryGuardRefund: 14,
+
+    /* ---- Overdrive (comeback) ----------------------------------------------
+       Below 30% health the fighter hits harder and builds meter faster. It is
+       deliberately a damage buff, not a defence buff: you still have to take
+       the same risks, you just get paid more for landing them. */
+    overdriveAt: 0.30,        // hp fraction that arms overdrive
+    overdriveDmg: 1.12,
+    overdriveMeter: 1.25,
+    overdriveBurstCost: 50,   // Fury Burst is cheaper while in overdrive
+
+    /* ---- Element burst ------------------------------------------------------
+       A counter hit or punish pops the attacker's element: extra hitstop,
+       bonus meter, and the big coloured VFX from the reference clips. */
+    burstMeter: 10,
+    burstHitstop: 4,
+    burstDamage: 1.06
   };
 
   /* Damage scaling by hit index (0-based). Never drops below the floor. */
@@ -52,7 +77,7 @@
       id: 'kaia', name: 'KAIA VENN', title: 'The Adaptive Vanguard', arch: 'ALL-ROUNDER',
       hp: 100, speed: 1.00, weight: 1.00, jump: 1.00, dash: 1.00,
       colors: { primary: 0x1f6d6a, secondary: 0xe9e2d0, accent: 0xf2a63b, skin: 0xd8a07a, hair: 0x231a1a, metal: 0xbfc7cc },
-      rig: 'kaia',
+      rig: 'kaia', element: 'EMBER', elementColor: 0xff8a3a,
       blurb: 'Reliable buttons, clean conversions. Best first pick.',
       special: 'Crosswind Arc', specialDesc: 'Forward carry strike',
       superName: 'Horizon Split', superDesc: 'Converging baton planes',
@@ -61,9 +86,9 @@
     },
     {
       id: 'rook', name: 'ROOK CALDER', title: 'The Faultline Grappler', arch: 'GRAPPLER',
-      hp: 118, speed: 0.78, weight: 1.35, jump: 0.92, dash: 0.86,
+      hp: 112, speed: 0.78, weight: 1.35, jump: 0.92, dash: 0.86,
       colors: { primary: 0x3a2b28, secondary: 0xb4552f, accent: 0xd8c9a3, skin: 0x8d5f42, hair: 0x2a1c14, metal: 0x8e8a80 },
-      rig: 'rook',
+      rig: 'rook', element: 'QUAKE', elementColor: 0xffc247,
       blurb: 'Command grab punishes passive guard. Slow to close distance.',
       special: 'Anchor Clinch', specialDesc: 'Command grab, side switch',
       superName: 'Ground Zero Driver', superDesc: 'Cinematic throw confirm',
@@ -74,7 +99,7 @@
       id: 'mira', name: 'MIRA SOL', title: 'The Flash Runner', arch: 'RUSHDOWN',
       hp: 90, speed: 1.20, weight: 0.85, jump: 1.10, dash: 1.25,
       colors: { primary: 0xff6f5e, secondary: 0xf6f2ea, accent: 0x2ec6ff, skin: 0xc98b62, hair: 0x1b2a3a, metal: 0xdfe6ea },
-      rig: 'mira',
+      rig: 'mira', element: 'VOLT', elementColor: 0x2ec6ff,
       blurb: 'Fast entry and tight pressure. Low health, real recovery.',
       special: 'Flashline', specialDesc: 'Dash strike, low reward on block',
       superName: 'Sunbreak Relay', superDesc: 'Multi-beat rush finish',
@@ -85,7 +110,7 @@
       id: 'sable', name: 'SABLE QUILL', title: 'The Glass Cartographer', arch: 'ZONER / TRAPPER',
       hp: 92, speed: 0.94, weight: 0.9, jump: 1.05, dash: 0.95,
       colors: { primary: 0x3b3470, secondary: 0xb8894a, accent: 0x8ff0cf, skin: 0x7a5a48, hair: 0x2b2b3a, metal: 0xc9b27a },
-      rig: 'sable',
+      rig: 'sable', element: 'VOID', elementColor: 0xb47cff,
       blurb: 'Controls the lane with shots and armed traps. Frail up close.',
       special: 'Prism Shot', specialDesc: 'Fast low-damage lane projectile',
       special2: 'Delayed Meridian', special2Desc: 'Armed floor trap',
