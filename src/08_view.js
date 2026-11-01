@@ -78,6 +78,14 @@
     }
     V.stage = RB.Stage.build(index, V.scene);
     V.stage.lights.forEach(function (l) { V.scene.add(l); });
+    /* Point the toon shader's key light at the arena's key light so fighters
+       are lit by the stage they are standing in, not by a fixed world light. */
+    if (RB.Shader) {
+      /* [ambTop rgb, ambBot rgb] in linear space. The temple is daylight and
+         needs a far stronger ambient than the night forge. */
+      if (index === 1) RB.Shader.setLight(12, 14, 8, 0x9fd0ff, 0.60, [0.180, 0.205, 0.250, 0.098, 0.088, 0.068], 0xfff0d0);
+      else RB.Shader.setLight(-8, 12, 9, 0x4fd8ff, 1.05, [0.135, 0.155, 0.195, 0.078, 0.058, 0.038], 0xffc07a);
+    }
     /* Dust takes the floor colour so it reads on both a dark and a bright stage. */
     RB.VFX.dustColor = index === 1 ? 0xb5ae9c : 0x6d7784;
     RB.Audio.ambience(V.stage.def.ambience);
@@ -172,7 +180,13 @@
           if (e.burst) RB.VFX.elementBurst(e.x, e.y, el);
           /* Defender flash: Rig.setFlash existed but nothing ever set it. */
           var dRig = rigFor(match.fighters[1 - side]);
-          if (dRig) dRig.setFlash(e.dmg > 9 ? 0.24 : 0.15);
+          if (dRig) {
+            /* Flash is added in linear space by the toon shader, so it reads
+               far hotter than the same value did on Lambert — these are roughly
+               half the old numbers for the same perceived pop. */
+            dRig.setFlash(e.dmg > 9 ? 0.14 : 0.09);
+            dRig.squash = e.dmg > 9 ? 1 : (e.dmg > 5 ? 0.72 : 0.5);
+          }
           if (e.launch) RB.VFX.launch(e.x, e.y, el);
           RB.Audio.play(e.dmg > 9 ? 'hitHeavy' : 'hitLight', e.counter);
           if (e.counter) RB.Audio.play('guardCrush');
@@ -375,6 +389,7 @@
   /* ------------------------------------------------------------------ frame */
   V.render = function (dt, match) {
     V.time += dt;
+    if (RB.Shader) RB.Shader.update(dt);
     if (V.stage) V.stage.update(dt, V.time);
 
     match.sides.forEach(function (side) {
@@ -421,11 +436,18 @@
           if (inActive && prev) {
             var dx = hp.x - prev.x, dy = hp.y - prev.y;
             var sp = Math.sqrt(dx * dx + dy * dy);
-            if (sp > 0.02) {
-              var ang = Math.atan2(dy, dx);
-              RB.VFX.slashTrail((hp.x + prev.x) / 2, (hp.y + prev.y) / 2,
-                f.def.colors.accent, ang, Math.min(0.9, sp * 1.8));
-            }
+              if (sp > 0.02) {
+                var ang = Math.atan2(dy, dx);
+                /* Per-move trail weight, so a launcher and a low sweep do not
+                   leave the same mark: the move list reads through the VFX. */
+                var mw = Math.min(0.9, sp * 1.8);
+                var mid2 = f.move.id;
+                if (mid2.indexOf('4C') > -1) mw *= 1.20;
+                else if (mid2.indexOf('2K') > -1) mw *= 0.65;
+                else if (mid2.indexOf('6S') > -1 || mid2.indexOf('2S') > -1) mw *= 1.30;
+                RB.VFX.slashTrail((hp.x + prev.x) / 2, (hp.y + prev.y) / 2,
+                  f.def.colors.accent, ang, mw);
+              }
           }
           if (!prev) V._hpPrev[f.id] = new T.Vector3();
           V._hpPrev[f.id].copy(hp);

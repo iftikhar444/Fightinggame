@@ -8,7 +8,9 @@
   var RB = root.RB;
   var T = root.THREE;
 
-  function lam(color) { return new T.MeshLambertMaterial({ color: color }); }
+  /* Characters use the hand-written toon + rim shader (05_shaders). The
+     fallback path (built-ins) is used when ?lite=1 is set. */
+  function lam(color) { return RB.Shader ? RB.Shader.charMaterial(color) : new T.MeshLambertMaterial({ color: color }); }
   function flat(color) { return new T.MeshBasicMaterial({ color: color }); }
 
   var PROP = {
@@ -26,8 +28,12 @@
     this.mats = [];
     this.pose = {};
     this.flash = 0;
+    /* Squash & stretch on impact. Scales the root (whose origin is at the feet,
+       so the character compresses toward the floor instead of sinking). */
+    this.squash = 0;
     this.build();
-    this.root.scale.setScalar(1.04 * this.p.h);
+    this.baseScale = 1.04 * this.p.h;
+    this.root.scale.setScalar(this.baseScale);
     this.resetPose();
   }
 
@@ -516,6 +522,8 @@
   Rig.prototype.applyPose = function (f, dt, time) {
     var target = this.targetPose(f, time);
     var st = f.state, S = RB.ST;
+    /* Squash decays here so it is frame-rate independent and stops cleanly. */
+    if (this.squash > 0 && !RB.freeze) this.squash = Math.max(0, this.squash - dt * 7);
     var rate;
     if (st === S.ATTACK) rate = 58;
     else if (st === S.SUPER || st === S.FURYBURST || st === S.TAGIN) rate = 34;
@@ -557,6 +565,22 @@
 
   Rig.prototype.apply = function (time) {
     var p = this.pose;
+
+    /* Squash & stretch: compress vertically and widen on impact, then spring
+       back. Volume is roughly preserved, which is what makes it read as weight
+       rather than as the model being scaled down. */
+    var sq = this.squash;
+    if (sq > 0.001) {
+      var e = RB.ease.outQuad(sq);
+      this.root.scale.set(
+        this.baseScale * (1 + e * 0.10),
+        this.baseScale * (1 - e * 0.13),
+        this.baseScale * (1 + e * 0.10)
+      );
+    } else if (this.root.scale.y !== this.baseScale) {
+      this.root.scale.setScalar(this.baseScale);
+    }
+
     this.body.position.y = 0.82 + p.hipY;
     this.body.position.x = p.bodyFx || 0;
     this.body.rotation.z = p.lean;
@@ -608,6 +632,9 @@
     this.flash = v;
     for (var i = 0; i < this.mats.length; i++) {
       var m = this.mats[i];
+      /* Toon shader carries the flash as a uniform; built-in fallback uses
+         emissive. Both paths have to stay in sync or ?lite=1 loses hit flash. */
+      if (m.uniforms && m.uniforms.uFlash) { m.uniforms.uFlash.value = v; continue; }
       if (!m.emissive) continue;
       if (v > 0.01) m.emissive.setRGB(v, v, v);
       else m.emissive.setHex(0x000000);

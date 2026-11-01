@@ -1,4 +1,4 @@
-<!-- RIFTBOUND: CLASH PROTOCOL — built 2026-11-01T07:54:50.997Z | modules: 11 | three r? -->
+<!-- RIFTBOUND: CLASH PROTOCOL — built 2026-11-01T08:37:29.720Z | modules: 12 | three r? -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -2399,6 +2399,230 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
 
+/* ==== 05_shaders.js ==== */
+/* =========================================================================
+   RIFTBOUND: CLASH PROTOCOL — 05 SHADERS
+   Hand-written GLSL for the look, with a hard budget in mind: this has to run
+   on a 4 GB integrated-GPU laptop, so every material here is a *replacement*
+   for a built-in one, never an addition. No extra draw calls, no extra passes,
+   one shared program, and all per-frame uniforms are shared objects so a single
+   write per frame updates every material.
+
+   three r158 notes:
+     - outputColorSpace defaults to sRGB, so every fragment shader ends with
+       <colorspace_fragment>; without it these materials render darker and more
+       saturated than the built-in ones sitting next to them.
+     - Color(hex) is converted sRGB -> linear by ColorManagement, so uniforms
+       built from hex are already in the space the maths expects.
+   ========================================================================= */
+(function (root) {
+  'use strict';
+  var RB = root.RB;
+  var T = root.THREE;
+
+  var S = { enabled: true, time: 0 };
+
+  /* Uniform objects shared by every material. Writing `.value` once updates
+     all of them, so per-frame cost is O(1) rather than O(materials). */
+  var U = {
+    time: { value: 0 },
+    light: { value: new T.Vector3(-0.45, 0.78, 0.44).normalize() },
+    rim: { value: new T.Color(0xbfe6ff) },
+    rimAmt: { value: 0.85 },
+    /* Hemisphere ambient, in linear space. Without this the shader is lit only
+       by the key, so anything facing away from it goes to the floor of the ramp
+       and the whole stage reads as black silhouettes — which is exactly what
+       happened the first time this was wired up. */
+    ambTop: { value: new T.Color().setRGB(0.105, 0.135, 0.180) },
+    ambBot: { value: new T.Color().setRGB(0.052, 0.042, 0.034) },
+    /* Key colour matters as much as its strength: the foundry is lit by a warm
+       forge and the temple by warm daylight, and a scalar-only key throws that
+       away, leaving every arena looking like the same grey studio. */
+    keyCol: { value: new T.Color(0xffffff) },
+    keyAmt: { value: 0.80 }
+  };
+
+  /* ------------------------------------------------------------- character */
+  /* Three-band toon ramp + fresnel rim. The ramp is what makes flat-shaded
+     boxes read as designed shapes instead of untextured primitives; the rim
+     separates a fighter from a busy stage without adding a light. */
+  var CHAR_VERT = [
+    'varying vec3 vN;',
+    'varying vec3 vV;',
+    'void main() {',
+    '  vec4 wp = modelMatrix * vec4(position, 1.0);',
+    '  vN = normalize(mat3(modelMatrix) * normal);',
+    '  vV = normalize(cameraPosition - wp.xyz);',
+    '  gl_Position = projectionMatrix * viewMatrix * wp;',
+    '}'
+  ].join('\n');
+
+  var CHAR_FRAG = [
+    'uniform vec3 uColor;',
+    'uniform vec3 uLight;',
+    'uniform vec3 uRim;',
+    'uniform vec3 uEmit;',
+    'uniform vec3 uAmbTop;',
+    'uniform vec3 uAmbBot;',
+    'uniform vec3 uKeyCol;',
+    'uniform float uKeyAmt;',
+    'uniform float uRimAmt;',
+    'uniform float uSteps;',
+    'uniform float uFlash;',
+    'varying vec3 vN;',
+    'varying vec3 vV;',
+    'void main() {',
+    '  vec3 n = normalize(vN);',
+    '  vec3 v = normalize(vV);',
+    '  float ndl = dot(n, normalize(uLight)) * 0.5 + 0.5;',
+    /* Quantised ramp. Step count is a uniform so characters can take a hard
+       3-step look while large stage geometry uses more steps — three bands over
+       a wall-sized box reads as a flat slab, not as form. */
+    '  float q = clamp(floor(ndl * uSteps) / max(1.0, uSteps - 1.0), 0.0, 1.0);',
+    '  float band = mix(0.30, 1.0, q);',
+    /* hemisphere ambient keeps unlit faces readable instead of black */
+    '  vec3 amb = mix(uAmbBot, uAmbTop, clamp(n.y * 0.5 + 0.5, 0.0, 1.0));',
+    '  vec3 col = uColor * (amb + band * uKeyCol * uKeyAmt);',
+    '  float fres = pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 2.6);',
+    '  col += uRim * fres * uRimAmt;',
+    '  col += uEmit;',
+    '  col += vec3(uFlash);',
+    '  gl_FragColor = vec4(col, 1.0);',
+    '  #include <colorspace_fragment>',
+    '}'
+  ].join('\n');
+
+  /* Materials are NOT cached across rigs. Two fighters can share a palette (tag
+     mode mirrors, same-character matches), and a shared material would flash
+     both of them at once. The GPU program is still shared — three caches by
+     shader source — so this costs a few objects, not a few compiles. */
+  S.charMaterial = function (colorHex, rimAmt, emitHex, steps) {
+    if (!S.enabled) {
+      var lm = new T.MeshLambertMaterial({ color: colorHex });
+      if (emitHex) lm.emissive = new T.Color(emitHex);
+      return lm;
+    }
+    var m = new T.ShaderMaterial({
+      uniforms: {
+        uColor: { value: new T.Color(colorHex) },
+        uEmit: { value: new T.Color(emitHex || 0x000000) },
+        uFlash: { value: 0 },
+        uLight: U.light,
+        uRim: U.rim,
+        uAmbTop: U.ambTop,
+        uAmbBot: U.ambBot,
+        uKeyCol: U.keyCol,
+        uKeyAmt: U.keyAmt,
+        uSteps: { value: steps || 3 },
+        /* Characters follow the stage's rim strength; props pass an explicit,
+           much lower value. Passing a per-material default here would silently
+           override setLight() and leave the rim doing nothing. */
+        uRimAmt: rimAmt == null ? U.rimAmt : { value: rimAmt }
+      },
+      vertexShader: CHAR_VERT,
+      fragmentShader: CHAR_FRAG
+    });
+    m.userData.isToon = true;
+    return m;
+  };
+
+  /* Stage props reuse the character shader with almost no rim — same program,
+     so it costs nothing extra to compile, and the stage stops looking like a
+     different renderer from the fighters. More steps because a wall-sized box
+     needs more than three bands to read as a surface. */
+  S.propMaterial = function (colorHex, rimAmt, emitHex) {
+    return S.charMaterial(colorHex, rimAmt == null ? 0.10 : rimAmt, emitHex, 6);
+  };
+
+  /* ------------------------------------------------------------------ floor */
+  /* One extra shader, one extra draw call: an energy grid that scrolls toward
+     the camera. Deliberately avoids fwidth/derivatives (no extension needed,
+     no per-pixel cost on weak GPUs) and fades with distance so it cannot alias
+     into moire at the back of the stage. */
+  var FLOOR_VERT = [
+    'varying vec3 vW;',
+    'varying vec2 vUv;',
+    'void main() {',
+    '  vec4 wp = modelMatrix * vec4(position, 1.0);',
+    '  vW = wp.xyz;',
+    '  vUv = uv;',
+    '  gl_Position = projectionMatrix * viewMatrix * wp;',
+    '}'
+  ].join('\n');
+
+  var FLOOR_FRAG = [
+    'uniform vec3 uBase;',
+    'uniform vec3 uLine;',
+    'uniform float uTime;',
+    'uniform vec2 uScale;',
+    'varying vec3 vW;',
+    'varying vec2 vUv;',
+    'void main() {',
+    '  vec2 p = vec2(vW.x, vW.z) * uScale;',
+    '  p.y += uTime * 0.35;',
+    '  vec2 f = abs(fract(p) - 0.5);',
+    '  float line = smoothstep(0.045, 0.0, min(f.x, f.y));',
+    /* travelling pulse band, cheap: one sin over world z */
+    '  float pulse = 0.5 + 0.5 * sin(vW.z * 0.9 - uTime * 2.2);',
+    '  float fade = smoothstep(26.0, 4.0, length(vW.xyz - cameraPosition));',
+    '  vec3 col = uBase;',
+    '  col += uLine * line * (0.10 + pulse * 0.14) * fade;',
+    '  col += uLine * 0.022 * pulse * fade;',
+    '  gl_FragColor = vec4(col, 1.0);',
+    '  #include <colorspace_fragment>',
+    '}'
+  ].join('\n');
+
+  S.floorMaterial = function (baseHex, lineHex, scale) {
+    if (!S.enabled) {
+      return new T.MeshLambertMaterial({ color: baseHex });
+    }
+    return new T.ShaderMaterial({
+      uniforms: {
+        uBase: { value: new T.Color(baseHex) },
+        uLine: { value: new T.Color(lineHex) },
+        uTime: U.time,
+        uScale: { value: new T.Vector2(scale || 0.55, scale || 0.55) }
+      },
+      vertexShader: FLOOR_VERT,
+      fragmentShader: FLOOR_FRAG
+    });
+  };
+
+  /* -------------------------------------------------------------- lighting */
+  /* Point the shared light at the stage's key light so characters keep matching
+     the arena they are standing in. Called once per stage load.
+     `amb` is [topR,topG,topB, botR,botG,botB] in linear space — a daylight arena
+     needs a much stronger ambient than a night forge or it reads as black. */
+  S.setLight = function (dirX, dirY, dirZ, rimHex, rimAmt, amb, keyHex) {
+    U.light.value.set(dirX, dirY, dirZ).normalize();
+    if (rimHex != null) U.rim.value.setHex(rimHex);
+    if (rimAmt != null) U.rimAmt.value = rimAmt;
+    if (keyHex != null) U.keyCol.value.setHex(keyHex);
+    if (amb) {
+      U.ambTop.value.setRGB(amb[0], amb[1], amb[2]);
+      U.ambBot.value.setRGB(amb[3], amb[4], amb[5]);
+    }
+  };
+
+  /* Single per-frame tick. Cheap enough to call unconditionally. */
+  S.update = function (dt) {
+    if (!S.enabled) return;
+    S.time += dt;
+    U.time.value = S.time;
+  };
+
+  /* ?lite=1 disables every custom shader and falls back to built-ins. Used as
+     the escape hatch on very weak hardware, and by the test suite to prove the
+     game still runs without the shader path. */
+  S.setEnabled = function (on) {
+    S.enabled = !!on;
+  };
+
+  RB.Shader = S;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+
 /* ==== 05_vfx.js ==== */
 /* =========================================================================
    RIFTBOUND: CLASH PROTOCOL — 05 VFX
@@ -2878,7 +3102,10 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
   var RB = root.RB;
   var T = root.THREE;
 
+  /* Stage geometry uses the same toon shader as the fighters (low rim), so the
+     arena and the characters never look like they came from two renderers. */
   function mat(color, emissive) {
+    if (RB.Shader) return RB.Shader.propMaterial(color, 0.10, emissive);
     var m = new T.MeshLambertMaterial({ color: color });
     if (emissive) m.emissive = new T.Color(emissive);
     return m;
@@ -2990,8 +3217,11 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     backdrop.position.set(0, 12, -46);
     g.add(backdrop);
 
-    /* Floor */
+    /* Floor. The deck gets the energy-grid shader (one extra draw call total,
+       not one per tile): it scrolls toward the camera and gives the arena a
+       sense of direction without any texture memory. */
     var floor = box(22, 0.5, 7.4, 0x4a5563, 0, -0.25, -0.6, g);
+    if (RB.Shader) floor.material = RB.Shader.floorMaterial(0x2b333d, 0xff7a2e, 0.62);
     box(22.6, 0.16, 7.8, 0x232a33, 0, -0.55, -0.6, g);
     /* Front skirt so the platform never reads as a floating slab */
     box(22.6, 2.0, 0.5, 0x1b222b, 0, -1.2, 3.1, g);
@@ -3216,6 +3446,10 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     /* Platform — deliberately darker than the sky so the fighters are the
        highest-contrast thing on screen. */
     box(22, 0.6, 7.6, 0x7d7a72, 0, -0.3, -0.6, g);
+    /* Signal grid on the relay platform: same shader, cool line colour, so the
+       two arenas read as the same world with different technology. */
+    var tfloor = g.children[g.children.length - 1];
+    if (RB.Shader) tfloor.material = RB.Shader.floorMaterial(0x5f6b74, 0x7fd8ff, 0.5);
     box(23, 0.3, 8.2, 0x5c5a53, 0, -0.72, -0.6, g);
     box(23, 2.2, 0.5, 0x605f58, 0, -1.5, 3.2, g);
     box(23, 0.12, 0.62, 0x8f8d83, 0, -0.1, 3.2, g);
@@ -3372,7 +3606,9 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
   var RB = root.RB;
   var T = root.THREE;
 
-  function lam(color) { return new T.MeshLambertMaterial({ color: color }); }
+  /* Characters use the hand-written toon + rim shader (05_shaders). The
+     fallback path (built-ins) is used when ?lite=1 is set. */
+  function lam(color) { return RB.Shader ? RB.Shader.charMaterial(color) : new T.MeshLambertMaterial({ color: color }); }
   function flat(color) { return new T.MeshBasicMaterial({ color: color }); }
 
   var PROP = {
@@ -3390,8 +3626,12 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     this.mats = [];
     this.pose = {};
     this.flash = 0;
+    /* Squash & stretch on impact. Scales the root (whose origin is at the feet,
+       so the character compresses toward the floor instead of sinking). */
+    this.squash = 0;
     this.build();
-    this.root.scale.setScalar(1.04 * this.p.h);
+    this.baseScale = 1.04 * this.p.h;
+    this.root.scale.setScalar(this.baseScale);
     this.resetPose();
   }
 
@@ -3880,6 +4120,8 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
   Rig.prototype.applyPose = function (f, dt, time) {
     var target = this.targetPose(f, time);
     var st = f.state, S = RB.ST;
+    /* Squash decays here so it is frame-rate independent and stops cleanly. */
+    if (this.squash > 0 && !RB.freeze) this.squash = Math.max(0, this.squash - dt * 7);
     var rate;
     if (st === S.ATTACK) rate = 58;
     else if (st === S.SUPER || st === S.FURYBURST || st === S.TAGIN) rate = 34;
@@ -3921,6 +4163,22 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
 
   Rig.prototype.apply = function (time) {
     var p = this.pose;
+
+    /* Squash & stretch: compress vertically and widen on impact, then spring
+       back. Volume is roughly preserved, which is what makes it read as weight
+       rather than as the model being scaled down. */
+    var sq = this.squash;
+    if (sq > 0.001) {
+      var e = RB.ease.outQuad(sq);
+      this.root.scale.set(
+        this.baseScale * (1 + e * 0.10),
+        this.baseScale * (1 - e * 0.13),
+        this.baseScale * (1 + e * 0.10)
+      );
+    } else if (this.root.scale.y !== this.baseScale) {
+      this.root.scale.setScalar(this.baseScale);
+    }
+
     this.body.position.y = 0.82 + p.hipY;
     this.body.position.x = p.bodyFx || 0;
     this.body.rotation.z = p.lean;
@@ -3972,6 +4230,9 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     this.flash = v;
     for (var i = 0; i < this.mats.length; i++) {
       var m = this.mats[i];
+      /* Toon shader carries the flash as a uniform; built-in fallback uses
+         emissive. Both paths have to stay in sync or ?lite=1 loses hit flash. */
+      if (m.uniforms && m.uniforms.uFlash) { m.uniforms.uFlash.value = v; continue; }
       if (!m.emissive) continue;
       if (v > 0.01) m.emissive.setRGB(v, v, v);
       else m.emissive.setHex(0x000000);
@@ -4069,6 +4330,14 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
     }
     V.stage = RB.Stage.build(index, V.scene);
     V.stage.lights.forEach(function (l) { V.scene.add(l); });
+    /* Point the toon shader's key light at the arena's key light so fighters
+       are lit by the stage they are standing in, not by a fixed world light. */
+    if (RB.Shader) {
+      /* [ambTop rgb, ambBot rgb] in linear space. The temple is daylight and
+         needs a far stronger ambient than the night forge. */
+      if (index === 1) RB.Shader.setLight(12, 14, 8, 0x9fd0ff, 0.60, [0.180, 0.205, 0.250, 0.098, 0.088, 0.068], 0xfff0d0);
+      else RB.Shader.setLight(-8, 12, 9, 0x4fd8ff, 1.05, [0.135, 0.155, 0.195, 0.078, 0.058, 0.038], 0xffc07a);
+    }
     /* Dust takes the floor colour so it reads on both a dark and a bright stage. */
     RB.VFX.dustColor = index === 1 ? 0xb5ae9c : 0x6d7784;
     RB.Audio.ambience(V.stage.def.ambience);
@@ -4163,7 +4432,13 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
           if (e.burst) RB.VFX.elementBurst(e.x, e.y, el);
           /* Defender flash: Rig.setFlash existed but nothing ever set it. */
           var dRig = rigFor(match.fighters[1 - side]);
-          if (dRig) dRig.setFlash(e.dmg > 9 ? 0.24 : 0.15);
+          if (dRig) {
+            /* Flash is added in linear space by the toon shader, so it reads
+               far hotter than the same value did on Lambert — these are roughly
+               half the old numbers for the same perceived pop. */
+            dRig.setFlash(e.dmg > 9 ? 0.14 : 0.09);
+            dRig.squash = e.dmg > 9 ? 1 : (e.dmg > 5 ? 0.72 : 0.5);
+          }
           if (e.launch) RB.VFX.launch(e.x, e.y, el);
           RB.Audio.play(e.dmg > 9 ? 'hitHeavy' : 'hitLight', e.counter);
           if (e.counter) RB.Audio.play('guardCrush');
@@ -4366,6 +4641,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
   /* ------------------------------------------------------------------ frame */
   V.render = function (dt, match) {
     V.time += dt;
+    if (RB.Shader) RB.Shader.update(dt);
     if (V.stage) V.stage.update(dt, V.time);
 
     match.sides.forEach(function (side) {
@@ -4412,11 +4688,18 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
           if (inActive && prev) {
             var dx = hp.x - prev.x, dy = hp.y - prev.y;
             var sp = Math.sqrt(dx * dx + dy * dy);
-            if (sp > 0.02) {
-              var ang = Math.atan2(dy, dx);
-              RB.VFX.slashTrail((hp.x + prev.x) / 2, (hp.y + prev.y) / 2,
-                f.def.colors.accent, ang, Math.min(0.9, sp * 1.8));
-            }
+              if (sp > 0.02) {
+                var ang = Math.atan2(dy, dx);
+                /* Per-move trail weight, so a launcher and a low sweep do not
+                   leave the same mark: the move list reads through the VFX. */
+                var mw = Math.min(0.9, sp * 1.8);
+                var mid2 = f.move.id;
+                if (mid2.indexOf('4C') > -1) mw *= 1.20;
+                else if (mid2.indexOf('2K') > -1) mw *= 0.65;
+                else if (mid2.indexOf('6S') > -1 || mid2.indexOf('2S') > -1) mw *= 1.30;
+                RB.VFX.slashTrail((hp.x + prev.x) / 2, (hp.y + prev.y) / 2,
+                  f.def.colors.accent, ang, mw);
+              }
           }
           if (!prev) V._hpPrev[f.id] = new T.Vector3();
           V._hpPrev[f.id].copy(hp);
@@ -5406,15 +5689,21 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
 
   function qualityLine() {
     var q = Game.forceHQ ? 'FORCED-HQ' : (Game.lowSpec ? 'LOW-SPEC' : 'FULL');
+    var r = RB.View.renderer && RB.View.renderer.info && RB.View.renderer.info.render;
     return 'QUALITY ' + q +
       '  FPS ' + Math.round(Game.fps || 0) +
       '  SCALE ' + (RB.View.pixelScale || 1).toFixed(2) +
-      '  VFX ' + Math.round((RB.VFX.quality || 1) * 100) + '%';
+      '  VFX ' + Math.round((RB.VFX.quality || 1) * 100) + '%' +
+      (r ? '  CALLS ' + r.calls + '  TRIS ' + r.triangles : '') +
+      '  SHADERS ' + (RB.Shader && RB.Shader.enabled ? 'ON' : 'LITE');
   }
 
   /* ----------------------------------------------------------------- boot */
   function boot() {
     var canvas = document.getElementById('cv');
+    /* ?lite=1 must be applied before anything builds a material — it swaps the
+       custom toon/floor shaders for built-ins on very weak hardware. */
+    if (RB.Shader && /[?&]lite=1\b/.test(location.search)) RB.Shader.setEnabled(false);
     RB.View.init(canvas);
     RB.UI.init(Game);
     /* ?hq=1 pins full quality — used when capturing comparison screenshots so a

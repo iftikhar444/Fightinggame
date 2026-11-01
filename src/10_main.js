@@ -421,15 +421,21 @@
 
   function qualityLine() {
     var q = Game.forceHQ ? 'FORCED-HQ' : (Game.lowSpec ? 'LOW-SPEC' : 'FULL');
+    var r = RB.View.renderer && RB.View.renderer.info && RB.View.renderer.info.render;
     return 'QUALITY ' + q +
       '  FPS ' + Math.round(Game.fps || 0) +
       '  SCALE ' + (RB.View.pixelScale || 1).toFixed(2) +
-      '  VFX ' + Math.round((RB.VFX.quality || 1) * 100) + '%';
+      '  VFX ' + Math.round((RB.VFX.quality || 1) * 100) + '%' +
+      (r ? '  CALLS ' + r.calls + '  TRIS ' + r.triangles : '') +
+      '  SHADERS ' + (RB.Shader && RB.Shader.enabled ? 'ON' : 'LITE');
   }
 
   /* ----------------------------------------------------------------- boot */
   function boot() {
     var canvas = document.getElementById('cv');
+    /* ?lite=1 must be applied before anything builds a material — it swaps the
+       custom toon/floor shaders for built-ins on very weak hardware. */
+    if (RB.Shader && /[?&]lite=1\b/.test(location.search)) RB.Shader.setEnabled(false);
     RB.View.init(canvas);
     RB.UI.init(Game);
     /* ?hq=1 pins full quality — used when capturing comparison screenshots so a

@@ -11,6 +11,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, '..');
 const gameUrl = pathToFileURL(path.join(root, 'dist', 'riftbound.html')).href;
+/* The base URL has no query string, so flags must be appended with the right
+   separator — a bare "&lite=1" produces an unopenable file:// URL. */
+const withFlag = (flag) => gameUrl + (gameUrl.includes('?') ? '&' : '?') + flag;
 const shots = path.join(root, 'screenshots');
 fs.mkdirSync(shots, { recursive: true });
 
@@ -308,7 +311,49 @@ ok('super cut-in names the fighter and the move',
   cutin.name.length > 0 && cutin.move.length > 0);
 await shot('12_super_cutin.png');
 
+/* ------------------------------------------------------------- perf budget */
+/* The brief is "must run on a 4 GB integrated-GPU laptop". These are the two
+   numbers that actually decide that, and both are asserted so a future visual
+   pass cannot quietly blow the budget. */
+const perf = await page.evaluate(() => {
+  const r = window.RIFTBOUND.RB.View.renderer.info.render;
+  return { calls: r.calls, tris: r.triangles, shaders: window.RIFTBOUND.RB.Shader.enabled };
+});
+ok('draw calls stay inside the budget', perf.calls < 260, JSON.stringify(perf));
+ok('triangle count stays inside the budget', perf.tris < 250000, JSON.stringify(perf));
+ok('custom shaders are active', perf.shaders === true);
+
 ok('no console errors during the whole run', errors.length === 0, errors.slice(0, 3).join(' | '));
+
+/* --------------------------------------------------- ?lite=1 fallback path */
+/* Proves the built-in-material escape hatch still boots, renders and plays. If
+   this breaks, weak hardware has no fallback at all. */
+{
+  const liteErrors = [];
+  const lite = await browser.newPage({ viewport: { width: 1024, height: 640 } });
+  lite.on('pageerror', (e) => liteErrors.push('PAGEERROR: ' + e.message));
+  lite.on('console', (m) => { if (m.type() === 'error') liteErrors.push(m.text()); });
+  await lite.goto(withFlag('lite=1'), { waitUntil: 'load' });
+  await lite.waitForFunction(() => {
+    const v = window.RIFTBOUND && window.RIFTBOUND.RB && window.RIFTBOUND.RB.View;
+    return !!(v && v.renderer && v.renderer.info.render.calls > 5);
+  }, null, { timeout: 15000 }).catch(() => { });
+  const liteState = await lite.evaluate(() => {
+    const RB = window.RIFTBOUND.RB, G = window.RIFTBOUND.Game;
+    G.mode = 'local'; G.sel.lockedPick = [0, 2]; G.sel.stage = 1;
+    G.startMatch();
+    G.advance(120);
+    return {
+      shaders: RB.Shader.enabled,
+      calls: RB.View.renderer.info.render.calls,
+      started: !!G.match && G.match.phase === 'fight'
+    };
+  });
+  ok('?lite=1 disables the custom shaders', liteState.shaders === false, JSON.stringify(liteState));
+  ok('?lite=1 still renders and starts a match', liteState.calls > 5 && liteState.started);
+  ok('?lite=1 produces no console errors', liteErrors.length === 0, liteErrors.slice(0, 2).join(' | '));
+  await lite.close();
+}
 
 await browser.close();
 console.log('='.repeat(52));

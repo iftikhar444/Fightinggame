@@ -8,7 +8,10 @@
   var RB = root.RB;
   var T = root.THREE;
 
+  /* Stage geometry uses the same toon shader as the fighters (low rim), so the
+     arena and the characters never look like they came from two renderers. */
   function mat(color, emissive) {
+    if (RB.Shader) return RB.Shader.propMaterial(color, 0.10, emissive);
     var m = new T.MeshLambertMaterial({ color: color });
     if (emissive) m.emissive = new T.Color(emissive);
     return m;
@@ -120,8 +123,11 @@
     backdrop.position.set(0, 12, -46);
     g.add(backdrop);
 
-    /* Floor */
+    /* Floor. The deck gets the energy-grid shader (one extra draw call total,
+       not one per tile): it scrolls toward the camera and gives the arena a
+       sense of direction without any texture memory. */
     var floor = box(22, 0.5, 7.4, 0x4a5563, 0, -0.25, -0.6, g);
+    if (RB.Shader) floor.material = RB.Shader.floorMaterial(0x2b333d, 0xff7a2e, 0.62);
     box(22.6, 0.16, 7.8, 0x232a33, 0, -0.55, -0.6, g);
     /* Front skirt so the platform never reads as a floating slab */
     box(22.6, 2.0, 0.5, 0x1b222b, 0, -1.2, 3.1, g);
@@ -346,6 +352,10 @@
     /* Platform — deliberately darker than the sky so the fighters are the
        highest-contrast thing on screen. */
     box(22, 0.6, 7.6, 0x7d7a72, 0, -0.3, -0.6, g);
+    /* Signal grid on the relay platform: same shader, cool line colour, so the
+       two arenas read as the same world with different technology. */
+    var tfloor = g.children[g.children.length - 1];
+    if (RB.Shader) tfloor.material = RB.Shader.floorMaterial(0x5f6b74, 0x7fd8ff, 0.5);
     box(23, 0.3, 8.2, 0x5c5a53, 0, -0.72, -0.6, g);
     box(23, 2.2, 0.5, 0x605f58, 0, -1.5, 3.2, g);
     box(23, 0.12, 0.62, 0x8f8d83, 0, -0.1, 3.2, g);

@@ -32,7 +32,7 @@ python -m http.server 8080
 
 ```bash
 node test/sim.test.mjs        # 56 headless combat assertions, no browser needed
-node test/browser.test.mjs    # 23 end-to-end checks + screenshots (needs playwright-core)
+node test/browser.test.mjs    # 33 end-to-end checks + screenshots (needs playwright-core)
 node test/shots.mjs <name>    # one framed comparison shot + numeric framing check
 ```
 
@@ -158,6 +158,26 @@ See **`GAMEPLAY.md`** for the full design rationale, the balance tables, and eve
 - Element-coloured impact rings, dash afterimages, an overdrive ground pulse, and a HUD chip so a
   comeback state is legible from the other side of the screen.
 
+### Rendering and performance budget
+
+The target is a 4 GB integrated-GPU laptop, so every visual addition is a *replacement* for
+something already being drawn, never an extra pass or an extra mesh.
+
+- **Hand-written GLSL** (`src/05_shaders.js`): a quantised toon ramp with a fresnel rim, a
+  hemisphere ambient term, a tinted key light, and a hit-flash uniform. One program, shared by
+  characters and stage geometry. The step count is a uniform, so characters take a hard 3-step look
+  while wall-sized geometry uses 6 steps and keeps its form.
+- **Animated energy floor**: a grid shader on the deck that scrolls toward the camera. No texture
+  memory, no derivatives (`fwidth` is avoided so no extension is needed), distance-faded so it
+  cannot alias at the back of the stage. Costs exactly one draw call.
+- **Shared uniforms**: light direction, rim, ambient, key colour and time are single objects
+  referenced by every material, so a frame costs O(1) uniform writes instead of O(materials).
+- **Measured, not assumed**: the browser suite asserts fewer than 260 draw calls and fewer than
+  250,000 triangles, and prints both in the F1 panel. Current build: ~117-135 calls.
+- **`?lite=1`** disables every custom shader and falls back to built-in materials. The suite boots
+  the game in that mode and checks it still renders, starts a match and logs no errors, so weak
+  hardware always has a working path.
+
 ---
 
 ## Roster
@@ -183,6 +203,7 @@ src/
   02_sim.js     fixed-step combat, hits, resources  (no DOM, no THREE)
   03_ai.js      input-mask AI                       (no DOM, no THREE)
   04_audio.js   procedural WebAudio
+  05_shaders.js hand-written GLSL: toon+rim, energy floor  (no DOM, no THREE beyond types)
   05_vfx.js     pooled effects
   06_stage.js   two arenas
   07_rig.js     shared skeleton + procedural poses
@@ -192,7 +213,7 @@ src/
 build.mjs       inlines vendor + css + modules -> dist/riftbound.html
 test/
   sim.test.mjs      56 assertions, runs the sim in a Node vm
-  browser.test.mjs  23 end-to-end checks in headless Chromium
+  browser.test.mjs  33 end-to-end checks in headless Chromium
   shots.mjs         framed comparison screenshots + numeric framing checks
 ```
 

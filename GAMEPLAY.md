@@ -217,7 +217,25 @@ Everything below lives in `TUNING` and is safe to experiment with.
 
 ---
 
-## 7. Verification
+## 7. Motion and impact
+
+Feel is a separate axis from balance, and it is where most of the "this reads as a
+fighting game" comes from. Everything below is view-side only — none of it can
+change who wins.
+
+| Technique | Where | Why |
+|---|---|---|
+| **Per-state pose rate** | `07_rig.js applyPose` | One fixed 11%/tick blend meant a 3-frame jab reached a third of its extension before recovery began. Attacks now blend at 58/tick, hits at 27, idle at 11. |
+| **Anticipation** | `attackPose` | Startup pulls the limb *back* (`ext = -0.30`), then snaps through the active frames with a 12% overshoot. Without this a strike has no wind-up and reads as a twitch. |
+| **Step-in** | `attackPose` → `bodyFx` | The body shifts forward into the strike (0.075 on a jab, 0.16 on a heavy) and gives the ground back on recovery. |
+| **Limb smear** | `apply` | The striking forearm stretches up to 1.16x along its length during the first active frames, with the fist counter-scaled so it keeps its size. Capped deliberately — past ~1.2 the arm reads as rubber. |
+| **Squash & stretch** | `apply` | On impact the defender compresses vertically (0.87x) and widens (1.10x), then springs back. The root origin is at the feet, so the character compresses toward the floor instead of sinking through it. |
+| **Cloth lag** | `secondary` | Jacket tail, coat and mantle are damped springs driven by torso rotation, so they trail the body instead of being welded to it. |
+| **Attack trails** | `08_view.js` | A streak dragged between the hand's last two positions, active frames only, weighted per move — a launcher leaves a bigger mark than a low sweep. |
+| **Hit flash** | `setFlash` | The defender's material flashes on impact. Values are roughly half what they were on Lambert, because the toon shader adds flash in linear space and the same number reads far hotter. |
+
+
+## 8. Verification
 
 The mechanics above are covered by headless assertions in `test/sim.test.mjs`
 (56 total). The ones that matter for this document:
